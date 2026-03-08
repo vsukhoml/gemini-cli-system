@@ -23,10 +23,26 @@ Schwab uses OAuth 2.0 to provide secure, delegated access to user data without e
 Register your application on the [Schwab Developer Portal](https://developer.schwab.com/).
 
 *   **App Status:** New or modified apps enter an `Approved - Pending` state. You cannot use the API until this status changes to `Ready for Use` (typically takes several business days).
-*   **Callback URL:** Must be `HTTPS`.
-    *   **Host:** Use `127.0.0.1` instead of `localhost` for local development to avoid DNS and IPv6 resolution issues.
-    *   **Port:** Use a non-standard port number higher than `1024` (e.g., `https://127.0.0.1:8182`). 
-    *   **Important:** Avoid the default HTTPS port (`443`) or port `80`. Most operating systems require superuser/root privileges to listen on ports below `1024`, and firewalls are more likely to block them. Ensure the port number is included in your registration on the Schwab Developer Portal.
+*   **Callback URL (redirect_uri):** A Callback URL is required when creating an App. This URL is used in the OAuth flow to redirect the user back to your application after they grant consent.
+    *   **Requirements & Recommendations:**
+        *   **Secure Scheme:** Most Lines of Business (LOBs) require `HTTPS`. While some may support `HTTP` or other schemes, `HTTPS` is the standard recommendation.
+        *   **Validation:** All URLs are validated for basic structure and must not contain special or unsupported characters.
+        *   **Exact Match:** The `redirect_uri` sent during the OAuth flow **must be identical** to one of the Callback URLs registered with your App (including scheme, host, port, and path).
+        *   **Host & Port:** Use `127.0.0.1` instead of `localhost` for local development. Use a non-standard port higher than `1024` (e.g., `https://127.0.0.1:8182`). Avoid ports `80` or `443` to circumvent permission and firewall issues.
+    *   **Multiple Callback URLs:**
+        *   You can register multiple URLs for a single App by separating them with a **comma** (no spaces).
+        *   *Example:* `https://127.0.0.1:8182,https://www.example.com/callback`
+        *   **Character Limit:** The field is currently limited to **256 characters**. Contact support if your use case exceeds this.
+        *   **Defaulting:** If no `redirect_uri` is sent during OAuth, it defaults to the registered URL. If multiple are registered and none is specified in the request, an error will occur.
+*   **Common Callback URL Errors:**
+
+| **Registered URL** | **URL Sent in OAuth** | **Result / Reason** |
+| :--- | :--- | :--- |
+| `https://host/path` | `https://host/path` | **Successful** |
+| `https://host/path` | `myapp://blah/bam` | **Error:** Scheme mismatch (`https` vs `myapp`) |
+| `https://host/path` | `http://host/path` | **Error:** Scheme mismatch (`https` vs `http`) |
+| `myapp://this/that` | `myapp://host/path` | **Error:** Path mismatch |
+
 *   **Credentials:** You will receive a **Client ID** (App Key) and **Client Secret**. Keep these secure.
 
 ### **2. The OAuth Flow**
@@ -45,11 +61,10 @@ import urllib.parse
 app_key = "YOUR_APP_KEY"
 callback_url = "https://127.0.0.1:8182"
 
-params = {
-    "client_id": app_key,
-    "redirect_uri": callback_url
-}
-auth_url = f"https://api.schwabapi.com/v1/oauth/authorize?{urllib.parse.urlencode(params)}"
+params = {"client_id": app_key, "redirect_uri": callback_url}
+auth_url = (
+    f"https://api.schwabapi.com/v1/oauth/authorize?{urllib.parse.urlencode(params)}"
+)
 print(f"Open this URL in your browser: {auth_url}")
 ```
 
@@ -69,23 +84,26 @@ Exchange the authorization code for an `access_token` and `refresh_token`.
 import httpx
 import base64
 
+
 def get_tokens(app_key, app_secret, code, callback_url):
     # Construct Basic Auth Header
     auth_str = f"{app_key}:{app_secret}"
     auth_header = base64.b64encode(auth_str.encode()).decode()
-    
+
     headers = {
         "Authorization": f"Basic {auth_header}",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
     }
-    
+
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": callback_url
+        "redirect_uri": callback_url,
     }
-    
-    response = httpx.post("https://api.schwabapi.com/v1/oauth/token", headers=headers, data=data)
+
+    response = httpx.post(
+        "https://api.schwabapi.com/v1/oauth/token", headers=headers, data=data
+    )
     return response.json()
 ```
 
@@ -105,18 +123,17 @@ def get_tokens(app_key, app_secret, code, callback_url):
 def refresh_access_token(app_key, app_secret, refresh_token):
     auth_str = f"{app_key}:{app_secret}"
     auth_header = base64.b64encode(auth_str.encode()).decode()
-    
+
     headers = {
         "Authorization": f"Basic {auth_header}",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
     }
-    
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token
-    }
-    
-    response = httpx.post("https://api.schwabapi.com/v1/oauth/token", headers=headers, data=data)
+
+    data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+
+    response = httpx.post(
+        "https://api.schwabapi.com/v1/oauth/token", headers=headers, data=data
+    )
     return response.json()
 ```
 
@@ -137,837 +154,360 @@ Before placing orders or utilizing the API heavily, you should be aware of sever
  * **Maximum of 500 concurrently streamed tickers.**
  Exceeding these limits will result in `HTTP 429 (Too Many Requests)` errors.
 * **Fractional Shares:** Fractional share orders are strictly not supported by the API.
+* **Date & Time Requirements:** When filtering by date ranges (e.g. `account_orders` or `transactions`), Schwab requires you to pass the `fromEnteredTime` and `toEnteredTime` parameters formatted specifically in `ISO_8601` format (e.g. `YYYY-MM-DDThh:mm:ss.000Z`). Failing to provide these parameters or providing them incorrectly will result in an `HTTP 400 Bad Request`.
+* **Request Tracking (Correlation ID):** Every API response includes a `Schwab-Client-CorrelId` header. This unique GUID tracks an individual service call throughout its lifetime across Schwab's systems. It is mandatory to provide this ID when contacting Schwab support for any specific request failure. The library automatically logs this ID at the `DEBUG` level and includes it in exception messages.
+* **Sporadic Outages (HTTP 500):** The Trader API (`/trader/v1/...`) has been known to experience unannounced backend outages or weekend maintenance windows where endpoints like `/accounts/{hash}` or `/orders` will return `HTTP 500 Server Error: {"message":"Application encountered unexpected error that prevented fulfilling this request"}`. During these periods, the Market Data API (`/marketdata/v1/...`) often remains fully functional. Ensure your bots catch `ServerError` exceptions to fail gracefully instead of crashing.
 
 ## Accounts, Orders & Transactions
 
 ### Accounts
 
-#### **GET** `/accounts/accountNumbers`
+#### **GET** `/trader/v1/accounts/accountNumbers`
+Get list of account numbers and their encrypted values.
 
-Get list of account numbers and their encrypted values
-
-Account numbers in plain text cannot be used outside of headers or request/response bodies. As the first step consumers must invoke this service to retrieve the list of plain text/encrypted value pairs, and use encrypted account values for all subsequent calls for any accountNumber request.
+Account numbers in plain text cannot be used outside of headers or request/response bodies. As the first step, consumers must invoke this service to retrieve the list of plain text/encrypted value pairs, and use the **`hashValue`** for all subsequent calls for any account-specific request.
 
 #### Parameters
-
-No parameters
+No parameters.
 
 #### Responses
-
-**Success Response (200)**: List of valid "accounts", matching the provided input parameters.
+**Success Response (200)**: List of account number and hash value pairs.
 
 **Schema on success**:
 ```json
 [
     {
-        "accountNumber": "string",
-        "hashValue": "string"
+        "accountNumber": "43003695",
+        "hashValue": "417C2D1EA08E18E0847BF58F2F91B13C3D402FD404152C6142C5756ACE8C20F1"
     }
 ]
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
+#### **GET** `/trader/v1/accounts/`
+Get linked account(s) balances and positions for the logged-in user.
 
-#### **GET** `/accounts`
+Balances are displayed by default. Positions are included only if the `fields=positions` parameter is provided.
 
-Get linked account(s) balances and positions for the logged in user.
+#### Parameters
 
-All the linked account information for the user logged in. The balances on these accounts are displayed by default however the positions on these accounts will be displayed based on the "positions" flag.
+* `fields` (string (query)): Optional. Use `positions` to include position data in the response.
 
-##### Parameters
-
-No parameters
-
-##### Responses
-
-**Success Response (200)**: List of valid "accounts", matching the provided input parameters.
+#### Responses
+**Success Response (200)**: List of valid accounts.
 
 **Schema on success**:
 ```json
 [
     {
         "securitiesAccount": {
-            "accountNumber": "string",
+            "type": "MARGIN",
+            "accountNumber": "97485470",
             "roundTrips": 0,
             "isDayTrader": false,
             "isClosingOnlyRestricted": false,
-            "pfcbFlag": false,
             "positions": [
                 {
-                    "shortQuantity": 0,
-                    "averagePrice": 0,
-                    "currentDayProfitLoss": 0,
-                    "currentDayProfitLossPercentage": 0,
-                    "longQuantity": 0,
-                    "settledLongQuantity": 0,
-                    "settledShortQuantity": 0,
-                    "agedQuantity": 0,
+                    "shortQuantity": 0.0,
+                    "averagePrice": 430.306,
+                    "longQuantity": 5.0,
                     "instrument": {
-                        "cusip": "string",
-                        "symbol": "string",
-                        "description": "string",
-                        "instrumentId": 0,
-                        "netChange": 0,
-                        "type": "SWEEP_VEHICLE"
+                        "assetType": "COLLECTIVE_INVESTMENT",
+                        "symbol": "VOO",
+                        "description": "VANGUARD S&P 500 ETF"
                     },
-                    "marketValue": 0,
-                    "maintenanceRequirement": 0,
-                    "averageLongPrice": 0,
-                    "averageShortPrice": 0,
-                    "taxLotAverageLongPrice": 0,
-                    "taxLotAverageShortPrice": 0,
-                    "longOpenProfitLoss": 0,
-                    "shortOpenProfitLoss": 0,
-                    "previousSessionLongQuantity": 0,
-                    "previousSessionShortQuantity": 0,
-                    "currentDayCost": 0
+                    "marketValue": 3092.15
                 }
             ],
-            "initialBalances": {
-                "accruedInterest": 0,
-                "availableFundsNonMarginableTrade": 0,
-                "bondValue": 0,
-                "buyingPower": 0,
-                "cashBalance": 0,
-                "cashAvailableForTrading": 0,
-                "cashReceipts": 0,
-                "dayTradingBuyingPower": 0,
-                "dayTradingBuyingPowerCall": 0,
-                "dayTradingEquityCall": 0,
-                "equity": 0,
-                "equityPercentage": 0,
-                "liquidationValue": 0,
-                "longMarginValue": 0,
-                "longOptionMarketValue": 0,
-                "longStockValue": 0,
-                "maintenanceCall": 0,
-                "maintenanceRequirement": 0,
-                "margin": 0,
-                "marginEquity": 0,
-                "moneyMarketFund": 0,
-                "mutualFundValue": 0,
-                "regTCall": 0,
-                "shortMarginValue": 0,
-                "shortOptionMarketValue": 0,
-                "shortStockValue": 0,
-                "totalCash": 0,
-                "isInCall": 0,
-                "unsettledCash": 0,
-                "pendingDeposits": 0,
-                "marginBalance": 0,
-                "shortBalance": 0,
-                "accountValue": 0
-            },
             "currentBalances": {
-                "availableFunds": 0,
-                "availableFundsNonMarginableTrade": 0,
-                "buyingPower": 0,
-                "buyingPowerNonMarginableTrade": 0,
-                "dayTradingBuyingPower": 0,
-                "dayTradingBuyingPowerCall": 0,
-                "equity": 0,
-                "equityPercentage": 0,
-                "longMarginValue": 0,
-                "maintenanceCall": 0,
-                "maintenanceRequirement": 0,
-                "marginBalance": 0,
-                "regTCall": 0,
-                "shortBalance": 0,
-                "shortMarginValue": 0,
-                "sma": 0,
-                "isInCall": 0,
-                "stockBuyingPower": 0,
-                "optionBuyingPower": 0
-            },
-            "projectedBalances": {
-                "availableFunds": 0,
-                "availableFundsNonMarginableTrade": 0,
-                "buyingPower": 0,
-                "buyingPowerNonMarginableTrade": 0,
-                "dayTradingBuyingPower": 0,
-                "dayTradingBuyingPowerCall": 0,
-                "equity": 0,
-                "equityPercentage": 0,
-                "longMarginValue": 0,
-                "maintenanceCall": 0,
-                "maintenanceRequirement": 0,
-                "marginBalance": 0,
-                "regTCall": 0,
-                "shortBalance": 0,
-                "shortMarginValue": 0,
-                "sma": 0,
-                "isInCall": 0,
-                "stockBuyingPower": 0,
-                "optionBuyingPower": 0
+                "availableFunds": 1234.56,
+                "equity": 5678.9
             }
         }
     }
 ]
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
+#### **GET** `/trader/v1/accounts/{accountNumber}`
+Get a specific account balance and positions for the logged-in user.
 
+Specific account information with balances and positions. Balances are displayed by default. Positions are included only if the `fields=positions` parameter is provided.
 
-#### **GET** `/accounts/{accountNumber}`
+#### Parameters
 
-Get a specific account balance and positions for the logged in user.
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `fields` (string (query)): Optional. Use `positions` to include position data in the response.
 
-Specific account information with balances and positions. The balance information on these accounts is displayed by default but Positions will be returned based on the "positions" flag.
-
-##### Parameters
-
-No parameters
-
-##### Responses
-
-**Success Response (200)**: A valid account, matching the provided input parameters
+#### Responses
+**Success Response (200)**: A valid account response.
 
 **Schema on success**:
 ```json
 {
     "securitiesAccount": {
-        "accountNumber": "string",
+        "type": "CASH",
+        "accountNumber": "43003695",
         "roundTrips": 0,
         "isDayTrader": false,
         "isClosingOnlyRestricted": false,
-        "pfcbFlag": false,
         "positions": [
             {
-                "shortQuantity": 0,
-                "averagePrice": 0,
-                "currentDayProfitLoss": 0,
-                "currentDayProfitLossPercentage": 0,
-                "longQuantity": 0,
-                "settledLongQuantity": 0,
-                "settledShortQuantity": 0,
-                "agedQuantity": 0,
-                "instrument": {
-                    "cusip": "string",
-                    "symbol": "string",
-                    "description": "string",
-                    "instrumentId": 0,
-                    "netChange": 0,
-                    "type": "SWEEP_VEHICLE"
-                },
-                "marketValue": 0,
-                "maintenanceRequirement": 0,
-                "averageLongPrice": 0,
-                "averageShortPrice": 0,
-                "taxLotAverageLongPrice": 0,
-                "taxLotAverageShortPrice": 0,
-                "longOpenProfitLoss": 0,
-                "shortOpenProfitLoss": 0,
-                "previousSessionLongQuantity": 0,
-                "previousSessionShortQuantity": 0,
-                "currentDayCost": 0
+                "symbol": "FCX",
+                "longQuantity": 31.6836,
+                "averagePrice": 35.4356,
+                "marketValue": 1880.74
             }
         ],
-        "initialBalances": {
-            "accruedInterest": 0,
-            "availableFundsNonMarginableTrade": 0,
-            "bondValue": 0,
-            "buyingPower": 0,
-            "cashBalance": 0,
-            "cashAvailableForTrading": 0,
-            "cashReceipts": 0,
-            "dayTradingBuyingPower": 0,
-            "dayTradingBuyingPowerCall": 0,
-            "dayTradingEquityCall": 0,
-            "equity": 0,
-            "equityPercentage": 0,
-            "liquidationValue": 0,
-            "longMarginValue": 0,
-            "longOptionMarketValue": 0,
-            "longStockValue": 0,
-            "maintenanceCall": 0,
-            "maintenanceRequirement": 0,
-            "margin": 0,
-            "marginEquity": 0,
-            "moneyMarketFund": 0,
-            "mutualFundValue": 0,
-            "regTCall": 0,
-            "shortMarginValue": 0,
-            "shortOptionMarketValue": 0,
-            "shortStockValue": 0,
-            "totalCash": 0,
-            "isInCall": 0,
-            "unsettledCash": 0,
-            "pendingDeposits": 0,
-            "marginBalance": 0,
-            "shortBalance": 0,
-            "accountValue": 0
-        },
         "currentBalances": {
-            "availableFunds": 0,
-            "availableFundsNonMarginableTrade": 0,
-            "buyingPower": 0,
-            "buyingPowerNonMarginableTrade": 0,
-            "dayTradingBuyingPower": 0,
-            "dayTradingBuyingPowerCall": 0,
-            "equity": 0,
-            "equityPercentage": 0,
-            "longMarginValue": 0,
-            "maintenanceCall": 0,
-            "maintenanceRequirement": 0,
-            "marginBalance": 0,
-            "regTCall": 0,
-            "shortBalance": 0,
-            "shortMarginValue": 0,
-            "sma": 0,
-            "isInCall": 0,
-            "stockBuyingPower": 0,
-            "optionBuyingPower": 0
-        },
-        "projectedBalances": {
-            "availableFunds": 0,
-            "availableFundsNonMarginableTrade": 0,
-            "buyingPower": 0,
-            "buyingPowerNonMarginableTrade": 0,
-            "dayTradingBuyingPower": 0,
-            "dayTradingBuyingPowerCall": 0,
-            "equity": 0,
-            "equityPercentage": 0,
-            "longMarginValue": 0,
-            "maintenanceCall": 0,
-            "maintenanceRequirement": 0,
-            "marginBalance": 0,
-            "regTCall": 0,
-            "shortBalance": 0,
-            "shortMarginValue": 0,
-            "sma": 0,
-            "isInCall": 0,
-            "stockBuyingPower": 0,
-            "optionBuyingPower": 0
+            "cashAvailableForTrading": 1000.0,
+            "liquidationValue": 5000.0
         }
     }
 }
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
 
 
 ### Orders
 
-#### **GET** `/accounts/{accountNumber}/orders`
+#### **GET** `/trader/v1/accounts/{accountNumber}/orders`
+Get all orders for a specific account.
 
-Get all orders for a specific account.  
-All orders for a specific account. Orders retrieved can be filtered based on input parameters below. Maximum date range is 1 year.
+Orders can be filtered by time range and status. The maximum date range is 1 year.
 
-##### Parameters
+#### Parameters
 
-No parameters
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `fromEnteredTime` (string (query), required if `toEnteredTime` is set): Start time in ISO-8601 format (e.g., `2024-03-29T00:00:00.000Z`).
+* `toEnteredTime` (string (query), required if `fromEnteredTime` is set): End time in ISO-8601 format (e.g., `2024-04-28T23:59:59.000Z`).
+* `maxResults` (integer (query)): Max number of orders to retrieve (default: 3000).
+* `status` (string (query)): Filter by status.
+    * *Values:* `AWAITING_PARENT_ORDER`, `AWAITING_CONDITION`, `AWAITING_STOP_CONDITION`, `AWAITING_MANUAL_REVIEW`, `ACCEPTED`, `AWAITING_UR_OUT`, `PENDING_ACTIVATION`, `QUEUED`, `WORKING`, `REJECTED`, `PENDING_CANCEL`, `CANCELED`, `PENDING_REPLACE`, `REPLACED`, `FILLED`, `EXPIRED`, `NEW`, `AWAITING_RELEASE_TIME`, `PENDING_ACKNOWLEDGEMENT`, `PENDING_RECALL`, `UNKNOWN`.
 
-##### Responses
-
-**Success Response (200)**: A List of orders for the account, matching the provided input parameters
+#### Responses
+**Success Response (200)**: A list of orders for the account.
 
 **Schema on success**:
 ```json
 [
     {
+        "orderId": 123456789,
+        "status": "FILLED",
+        "orderType": "LIMIT",
         "session": "NORMAL",
         "duration": "DAY",
-        "orderType": "MARKET",
-        "cancelTime": "2025-11-08T22:40:38.846Z",
-        "complexOrderStrategyType": "NONE",
-        "quantity": 0,
-        "filledQuantity": 0,
+        "price": 150.0,
+        "quantity": 10,
+        "filledQuantity": 10,
         "remainingQuantity": 0,
-        "requestedDestination": "INET",
-        "destinationLinkName": "string",
-        "releaseTime": "2025-11-08T22:40:38.846Z",
-        "stopPrice": 0,
-        "stopPriceLinkBasis": "MANUAL",
-        "stopPriceLinkType": "VALUE",
-        "stopPriceOffset": 0,
-        "stopType": "STANDARD",
-        "priceLinkBasis": "MANUAL",
-        "priceLinkType": "VALUE",
-        "price": 0,
-        "taxLotMethod": "FIFO",
+        "enteredTime": "2024-04-20T14:30:00.000Z",
         "orderLegCollection": [
             {
                 "orderLegType": "EQUITY",
-                "legId": 0,
-                "instrument": {
-                    "cusip": "string",
-                    "symbol": "string",
-                    "description": "string",
-                    "instrumentId": 0,
-                    "netChange": 0,
-                    "type": "SWEEP_VEHICLE"
-                },
                 "instruction": "BUY",
-                "positionEffect": "OPENING",
-                "quantity": 0,
-                "quantityType": "ALL_SHARES",
-                "divCapGains": "REINVEST",
-                "toSymbol": "string"
+                "instrument": {
+                    "symbol": "AAPL",
+                    "assetType": "EQUITY"
+                }
             }
-        ],
-        "activationPrice": 0,
-        "specialInstruction": "ALL_OR_NONE",
-        "orderStrategyType": "SINGLE",
-        "orderId": 0,
-        "cancelable": false,
-        "editable": false,
-        "status": "AWAITING_PARENT_ORDER",
-        "enteredTime": "2025-11-08T22:40:38.847Z",
-        "closeTime": "2025-11-08T22:40:38.847Z",
-        "tag": "string",
-        "accountNumber": 0,
-        "orderActivityCollection": [
-            {
-                "activityType": "EXECUTION",
-                "executionType": "FILL",
-                "quantity": 0,
-                "orderRemainingQuantity": 0,
-                "executionLegs": [
-                    {
-                        "legId": 0,
-                        "price": 0,
-                        "quantity": 0,
-                        "mismarkedQuantity": 0,
-                        "instrumentId": 0,
-                        "time": "2025-11-08T22:40:38.847Z"
-                    }
-                ]
-            }
-        ],
-        "replacingOrderCollection": [
-            "string"
-        ],
-        "childOrderStrategies": [
-            "string"
-        ],
-        "statusDescription": "string"
+        ]
     }
 ]
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
 
-#### **POST** `/accounts/{accountNumber}/orders`
-
+#### **POST** `/trader/v1/accounts/{accountNumber}/orders`
 Place an order for a specific account.
 
-##### Parameters
+#### Parameters
 
-No parameters
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
 
-#### **Request body**
-The new Order Object.
+#### **Request Body**
+The order object following the required schema.
 
+**Example: Buying 10 shares of AAPL at Market price**
 ```json
 {
+    "orderType": "MARKET",
     "session": "NORMAL",
     "duration": "DAY",
-    "orderType": "MARKET",
-    "cancelTime": "2025-11-08T22:40:38.865Z",
-    "complexOrderStrategyType": "NONE",
-    "quantity": 0,
-    "filledQuantity": 0,
-    "remainingQuantity": 0,
-    "destinationLinkName": "string",
-    "releaseTime": "2025-11-08T22:40:38.865Z",
-    "stopPrice": 0,
-    "stopPriceLinkBasis": "MANUAL",
-    "stopPriceLinkType": "VALUE",
-    "stopPriceOffset": 0,
-    "stopType": "STANDARD",
-    "priceLinkBasis": "MANUAL",
-    "priceLinkType": "VALUE",
-    "price": 0,
-    "taxLotMethod": "FIFO",
+    "orderStrategyType": "SINGLE",
     "orderLegCollection": [
         {
-            "orderLegType": "EQUITY",
-            "legId": 0,
-            "instrument": {
-                "cusip": "string",
-                "symbol": "string",
-                "description": "string",
-                "instrumentId": 0,
-                "netChange": 0,
-                "type": "SWEEP_VEHICLE"
-            },
             "instruction": "BUY",
-            "positionEffect": "OPENING",
-            "quantity": 0,
-            "quantityType": "ALL_SHARES",
-            "divCapGains": "REINVEST",
-            "toSymbol": "string"
+            "quantity": 10,
+            "instrument": {
+                "symbol": "AAPL",
+                "assetType": "EQUITY"
+            }
         }
-    ],
-    "activationPrice": 0,
-    "specialInstruction": "ALL_OR_NONE",
-    "orderStrategyType": "SINGLE",
-    "orderId": 0,
-    "cancelable": false,
-    "editable": false,
-    "status": "AWAITING_PARENT_ORDER",
-    "enteredTime": "2025-11-08T22:40:38.865Z",
-    "closeTime": "2025-11-08T22:40:38.865Z",
-    "accountNumber": 0,
-    "orderActivityCollection": [
-        {
-            "activityType": "EXECUTION",
-            "executionType": "FILL",
-            "quantity": 0,
-            "orderRemainingQuantity": 0,
-            "executionLegs": [
-                {
-                    "legId": 0,
-                    "price": 0,
-                    "quantity": 0,
-                    "mismarkedQuantity": 0,
-                    "instrumentId": 0,
-                    "time": "2025-11-08T22:40:38.865Z"
-                }
-            ]
-        }
-    ],
-    "replacingOrderCollection": [
-        "string"
-    ],
-    "childOrderStrategies": [
-        "string"
-    ],
-    "statusDescription": "string"
+    ]
 }
 ```
-##### Responses
 
-**Success Response (201)**: Empty response body if an order was successfully placed/created.
-
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
-- `Location`: Link to the newly created order if order was successfully created. (string)
+#### Responses
+**Success Response (201)**: Empty response body. Includes a `Location` header with a URI pointing to the newly created order. The `orderId` can be extracted from this URI.
 
 
-#### **GET** `/accounts/{accountNumber}/orders/{orderId}`
+#### **POST** `/trader/v1/accounts/{accountNumber}/previewOrder`
+Preview an order for a specific account.
 
-Get a specific order by its ID, for a specific account
+#### Parameters
 
-##### Parameters
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
 
-No parameters
+#### **Request Body**
+The order object following the required schema.
 
-##### Responses
-
-**Success Response (200)**: An order object, matching the input parameters
+#### Responses
+**Success Response (200)**: An order object including validation results and estimated commissions.
 
 **Schema on success**:
 ```json
 {
-    "session": "NORMAL",
-    "duration": "DAY",
-    "orderType": "MARKET",
-    "cancelTime": "2025-11-08T22:40:38.880Z",
-    "complexOrderStrategyType": "NONE",
-    "quantity": 0,
-    "filledQuantity": 0,
-    "remainingQuantity": 0,
-    "requestedDestination": "INET",
-    "destinationLinkName": "string",
-    "releaseTime": "2025-11-08T22:40:38.880Z",
-    "stopPrice": 0,
-    "stopPriceLinkBasis": "MANUAL",
-    "stopPriceLinkType": "VALUE",
-    "stopPriceOffset": 0,
-    "stopType": "STANDARD",
-    "priceLinkBasis": "MANUAL",
-    "priceLinkType": "VALUE",
-    "price": 0,
-    "taxLotMethod": "FIFO",
-    "orderLegCollection": [
-        {
-            "orderLegType": "EQUITY",
-            "legId": 0,
-            "instrument": {
-                "cusip": "string",
-                "symbol": "string",
-                "description": "string",
-                "instrumentId": 0,
-                "netChange": 0,
-                "type": "SWEEP_VEHICLE"
-            },
-            "instruction": "BUY",
-            "positionEffect": "OPENING",
-            "quantity": 0,
-            "quantityType": "ALL_SHARES",
-            "divCapGains": "REINVEST",
-            "toSymbol": "string"
-        }
-    ],
-    "activationPrice": 0,
-    "specialInstruction": "ALL_OR_NONE",
-    "orderStrategyType": "SINGLE",
     "orderId": 0,
-    "cancelable": false,
-    "editable": false,
-    "status": "AWAITING_PARENT_ORDER",
-    "enteredTime": "2025-11-08T22:40:38.881Z",
-    "closeTime": "2025-11-08T22:40:38.881Z",
-    "tag": "string",
-    "accountNumber": 0,
-    "orderActivityCollection": [
-        {
-            "activityType": "EXECUTION",
-            "executionType": "FILL",
-            "quantity": 0,
-            "orderRemainingQuantity": 0,
-            "executionLegs": [
+    "orderStrategy": {
+        "accountNumber": "97485470",
+        "orderStrategyType": "SINGLE",
+        "orderLegs": [
+            {
+                "symbol": "AAPL",
+                "instruction": "BUY",
+                "quantity": 10
+            }
+        ]
+    },
+    "orderValidationResult": {
+        "alerts": [],
+        "accepts": [],
+        "rejects": []
+    },
+    "commissionAndFee": {
+        "commission": {
+            "commissionLegs": [
                 {
-                    "legId": 0,
-                    "price": 0,
-                    "quantity": 0,
-                    "mismarkedQuantity": 0,
-                    "instrumentId": 0,
-                    "time": "2025-11-08T22:40:38.881Z"
+                    "commissionValues": [
+                        {
+                            "value": 0,
+                            "type": "COMMISSION"
+                        }
+                    ]
                 }
             ]
         }
-    ],
-    "replacingOrderCollection": [
-        "string"
-    ],
-    "childOrderStrategies": [
-        "string"
-    ],
-    "statusDescription": "string"
+    }
 }
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
+#### **GET** `/trader/v1/accounts/{accountNumber}/orders/{orderId}`
+Get a specific order by its ID, for a specific account.
 
-#### **DELETE** `/accounts/{accountNumber}/orders/{orderId}`
+#### Parameters
 
-Cancel a specific order for a specific account
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `orderId` (integer (path), required): The ID of the order being retrieved.
 
-##### Parameters
+#### Responses
+**Success Response (200)**: A single order object.
 
-No parameters
-
-##### Responses
-
-**Success Response (200)**: Empty response body if an order was successfully canceled.
-
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
-
-
-#### **PUT** `/accounts/{accountNumber}/orders/{orderId}`
-
-Replace an existing order for an account. The existing order will be replaced by the new order. Once replaced, the old order will be canceled and a new order will be created.
-
-##### Parameters
-
-No parameters
-
-##### Request body
-
-**application/json**
-
-The Order Object.
-
-**Example Value:**
-
+**Schema on success**:
 ```json
 {
+    "orderId": 123456789,
+    "status": "FILLED",
+    "orderType": "LIMIT",
     "session": "NORMAL",
     "duration": "DAY",
-    "orderType": "MARKET",
-    "cancelTime": "2025-11-08T22:40:38.909Z",
-    "complexOrderStrategyType": "NONE",
-    "quantity": 0,
-    "filledQuantity": 0,
+    "price": 150.0,
+    "quantity": 10,
+    "filledQuantity": 10,
     "remainingQuantity": 0,
-    "destinationLinkName": "string",
-    "releaseTime": "2025-11-08T22:40:38.909Z",
-    "stopPrice": 0,
-    "stopPriceLinkBasis": "MANUAL",
-    "stopPriceLinkType": "VALUE",
-    "stopPriceOffset": 0,
-    "stopType": "STANDARD",
-    "priceLinkBasis": "MANUAL",
-    "priceLinkType": "VALUE",
-    "price": 0,
-    "taxLotMethod": "FIFO",
+    "enteredTime": "2024-04-20T14:30:00.000Z",
     "orderLegCollection": [
         {
             "orderLegType": "EQUITY",
-            "legId": 0,
-            "instrument": {
-                "cusip": "string",
-                "symbol": "string",
-                "description": "string",
-                "instrumentId": 0,
-                "netChange": 0,
-                "type": "SWEEP_VEHICLE"
-            },
             "instruction": "BUY",
-            "positionEffect": "OPENING",
-            "quantity": 0,
-            "quantityType": "ALL_SHARES",
-            "divCapGains": "REINVEST",
-            "toSymbol": "string"
+            "instrument": {
+                "symbol": "AAPL",
+                "assetType": "EQUITY"
+            }
         }
-    ],
-    "activationPrice": 0,
-    "specialInstruction": "ALL_OR_NONE",
-    "orderStrategyType": "SINGLE",
-    "orderId": 0,
-    "cancelable": false,
-    "editable": false,
-    "status": "AWAITING_PARENT_ORDER",
-    "enteredTime": "2025-11-08T22:40:38.909Z",
-    "closeTime": "2025-11-08T22:40:38.909Z",
-    "accountNumber": 0,
-    "orderActivityCollection": [
-        {
-            "activityType": "EXECUTION",
-            "executionType": "FILL",
-            "quantity": 0,
-            "orderRemainingQuantity": 0,
-            "executionLegs": [
-                {
-                    "legId": 0,
-                    "price": 0,
-                    "quantity": 0,
-                    "mismarkedQuantity": 0,
-                    "instrumentId": 0,
-                    "time": "2025-11-08T22:40:38.909Z"
-                }
-            ]
-        }
-    ],
-    "replacingOrderCollection": [
-        "string"
-    ],
-    "childOrderStrategies": [
-        "string"
-    ],
-    "statusDescription": "string"
+    ]
 }
 ```
 
-##### Responses
-
-**Success Response (201)**: Empty response body if an order was successfully replaced/created.
-
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
-- `Location`: Link to the newly created order if order was successfully created. (string)
 
 
-#### **GET** `/orders`
+#### **DELETE** `/trader/v1/accounts/{accountNumber}/orders/{orderId}`
+Cancel a specific order for a specific account.
 
-Get all orders for all accounts
+#### Parameters
 
-##### Parameters
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `orderId` (integer (path), required): The ID of the order to cancel.
 
-No parameters
+#### Responses
+**Success Response (200)**: Empty response body.
 
-##### Responses
+**Error Response (400)**: Validation problem with the request.
+```json
+{
+    "message": "string",
+    "errors": [
+        "string"
+    ]
+}
+```
 
-**Success Response (200)**: A List of orders for the specified account or if its not mentioned, for all the linked accounts, matching the provided input parameters.
+#### **PUT** `/trader/v1/accounts/{accountNumber}/orders/{orderId}`
+Replace an existing order for an account. The existing order will be replaced by the new order. Once replaced, the old order will be canceled and a new order will be created.
+
+#### Parameters
+
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `orderId` (integer (path), required): The ID of the order to replace.
+
+#### **Request Body**
+The new order object.
+
+#### Responses
+**Success Response (201)**: Empty response body. Includes a `Location` header with a URI pointing to the newly created replacement order.
+
+
+#### **GET** `/trader/v1/orders`
+Get all orders for all linked accounts.
+
+Orders can be filtered by time range and status. The date must be within 60 days from today.
+
+#### Parameters
+
+* `fromEnteredTime` (string (query), required if `toEnteredTime` is set): Start time in ISO-8601 format.
+* `toEnteredTime` (string (query), required if `fromEnteredTime` is set): End time in ISO-8601 format.
+* `maxResults` (integer (query)): Max number of orders to retrieve (default: 3000).
+* `status` (string (query)): Filter by status.
+
+#### Responses
+**Success Response (200)**: A list of orders for all linked accounts.
 
 **Schema on success**:
 ```json
 [
     {
-        "session": "NORMAL",
-        "duration": "DAY",
-        "orderType": "MARKET",
-        "cancelTime": "2025-11-08T22:40:38.934Z",
-        "complexOrderStrategyType": "NONE",
-        "quantity": 0,
-        "filledQuantity": 0,
-        "remainingQuantity": 0,
-        "requestedDestination": "INET",
-        "destinationLinkName": "string",
-        "releaseTime": "2025-11-08T22:40:38.934Z",
-        "stopPrice": 0,
-        "stopPriceLinkBasis": "MANUAL",
-        "stopPriceLinkType": "VALUE",
-        "stopPriceOffset": 0,
-        "stopType": "STANDARD",
-        "priceLinkBasis": "MANUAL",
-        "priceLinkType": "VALUE",
-        "price": 0,
-        "taxLotMethod": "FIFO",
-        "orderLegCollection": [
-            {
-                "orderLegType": "EQUITY",
-                "legId": 0,
-                "instrument": {
-                    "cusip": "string",
-                    "symbol": "string",
-                    "description": "string",
-                    "instrumentId": 0,
-                    "netChange": 0,
-                    "type": "SWEEP_VEHICLE"
-                },
-                "instruction": "BUY",
-                "positionEffect": "OPENING",
-                "quantity": 0,
-                "quantityType": "ALL_SHARES",
-                "divCapGains": "REINVEST",
-                "toSymbol": "string"
-            }
-        ],
-        "activationPrice": 0,
-        "specialInstruction": "ALL_OR_NONE",
-        "orderStrategyType": "SINGLE",
-        "orderId": 0,
-        "cancelable": false,
-        "editable": false,
-        "status": "AWAITING_PARENT_ORDER",
-        "enteredTime": "2025-11-08T22:40:38.934Z",
-        "closeTime": "2025-11-08T22:40:38.934Z",
-        "tag": "string",
-        "accountNumber": 0,
-        "orderActivityCollection": [
-            {
-                "activityType": "EXECUTION",
-                "executionType": "FILL",
-                "quantity": 0,
-                "orderRemainingQuantity": 0,
-                "executionLegs": [
-                    {
-                        "legId": 0,
-                        "price": 0,
-                        "quantity": 0,
-                        "mismarkedQuantity": 0,
-                        "instrumentId": 0,
-                        "time": "2025-11-08T22:40:38.934Z"
-                    }
-                ]
-            }
-        ],
-        "replacingOrderCollection": [
-            "string"
-        ],
-        "childOrderStrategies": [
-            "string"
-        ],
-        "statusDescription": "string"
+        "orderId": 123456789,
+        "accountNumber": "97485470",
+        "status": "FILLED",
+        "orderType": "LIMIT",
+        "price": 150.0,
+        "quantity": 10,
+        "enteredTime": "2024-04-20T14:30:00.000Z"
     }
 ]
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
 
 #### **POST** `/accounts/{accountNumber}/previewOrder`
@@ -1269,130 +809,53 @@ The Order Object.
 }
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
 
 
 
 ### Transactions
 
-#### **GET**  `/accounts/{accountNumber}/transactions`
+#### **GET** `/trader/v1/accounts/{accountNumber}/transactions`
+Get all transactions for a specific account.
 
-Get all transactions information for a specific account. All transactions for a specific account. Maximum number of transactions in response is 3000\. Maximum date range is 1 year.
+Transactions can be filtered by date range, type, and symbol. Maximum 3000 transactions. Maximum date range is 1 year.
 
-##### Parameters
+#### Parameters
 
-No parameters
-
-##### Responses
-
-**Success Response (200)**: A List of orders for the account, matching the provided input parameters
-
-**Schema on success**:
-```json
-[
-    {
-        "activityId": 0,
-        "time": "2025-11-08T22:40:38.974Z",
-        "user": {
-            "cdDomainId": "string",
-            "login": "string",
-            "type": "ADVISOR_USER",
-            "userId": 0,
-            "systemUserName": "string",
-            "firstName": "string",
-            "lastName": "string",
-            "brokerRepCode": "string"
-        },
-        "description": "string",
-        "accountNumber": "string",
-        "type": "TRADE",
-        "status": "VALID",
-        "subAccount": "CASH",
-        "tradeDate": "2025-11-08T22:40:38.974Z",
-        "settlementDate": "2025-11-08T22:40:38.974Z",
-        "positionId": 0,
-        "orderId": 0,
-        "netAmount": 0,
-        "activityType": "ACTIVITY_CORRECTION",
-        "transferItems": [
-            {
-                "instrument": {
-                    "cusip": "string",
-                    "symbol": "string",
-                    "description": "string",
-                    "instrumentId": 0,
-                    "netChange": 0,
-                    "type": "SWEEP_VEHICLE"
-                },
-                "amount": 0,
-                "cost": 0,
-                "price": 0,
-                "feeType": "COMMISSION",
-                "positionEffect": "OPENING"
-            }
-        ]
-    }
-]
-```
-
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
-
-
-#### **GET** `/accounts/{accountNumber}/transactions/{transactionId}`
-
-Get specific transaction information for a specific account
-
-##### Parameters
-
-No parameters
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `startDate` (string (query), required): Start date in ISO-8601 format.
+* `endDate` (string (query), required): End date in ISO-8601 format.
+* `types` (string (query), required): Comma-separated list of transaction types.
+    * *Values:* `TRADE`, `RECEIVE_AND_DELIVER`, `DIVIDEND_OR_INTEREST`, `ACH_RECEIPT`, `ACH_DISBURSEMENT`, `CASH_RECEIPT`, `CASH_DISBURSEMENT`, `ELECTRONIC_FUND`, `WIRE_OUT`, `WIRE_IN`, `JOURNAL`, `MEMORANDUM`, `MARGIN_CALL`, `MONEY_MARKET`, `SMA_ADJUSTMENT`.
+* `symbol` (string (query)): Filter by symbol.
 
 #### Responses
-
-**Success Response (200)**: A List of orders for the account, matching the provided input parameters
+**Success Response (200)**: A list of transactions.
 
 **Schema on success**:
 ```json
 [
     {
-        "activityId": 0,
-        "time": "2025-11-08T22:40:38.987Z",
-        "user": {
-            "cdDomainId": "string",
-            "login": "string",
-            "type": "ADVISOR_USER",
-            "userId": 0,
-            "systemUserName": "string",
-            "firstName": "string",
-            "lastName": "string",
-            "brokerRepCode": "string"
-        },
-        "description": "string",
-        "accountNumber": "string",
+        "activityId": 93401981092,
+        "time": "2025-03-07T22:34:50+0000",
+        "description": "PFIZER INC",
+        "accountNumber": "99415888",
         "type": "TRADE",
         "status": "VALID",
-        "subAccount": "CASH",
-        "tradeDate": "2025-11-08T22:40:38.987Z",
-        "settlementDate": "2025-11-08T22:40:38.987Z",
-        "positionId": 0,
-        "orderId": 0,
-        "netAmount": 0,
-        "activityType": "ACTIVITY_CORRECTION",
+        "subAccount": "MARGIN",
+        "tradeDate": "2025-03-07T05:00:00+0000",
+        "settlementDate": "2025-03-07T05:00:00+0000",
+        "positionId": 2103987573,
+        "netAmount": -51.35,
         "transferItems": [
             {
                 "instrument": {
-                    "cusip": "string",
-                    "symbol": "string",
-                    "description": "string",
-                    "instrumentId": 0,
-                    "netChange": 0,
-                    "type": "SWEEP_VEHICLE"
+                    "assetType": "EQUITY",
+                    "symbol": "PFE",
+                    "description": "PFIZER INC"
                 },
-                "amount": 0,
-                "cost": 0,
-                "price": 0,
-                "feeType": "COMMISSION",
+                "amount": 1.9191,
+                "cost": -51.35,
+                "price": 26.75702,
                 "positionEffect": "OPENING"
             }
         ]
@@ -1400,24 +863,64 @@ No parameters
 ]
 ```
 
-**Headers**:
-- `Schwab-Client-CorrelId`: Correlation Id. Auto generated (string)
+#### **GET** `/trader/v1/accounts/{accountNumber}/transactions/{transactionId}`
+Get specific transaction information for a specific account.
+
+#### Parameters
+
+* `accountNumber` (string (path), required): The encrypted ID of the account (`hashValue`).
+* `transactionId` (integer (path), required): The ID of the transaction being retrieved.
+
+#### Responses
+**Success Response (200)**: A list containing the specific transaction object.
+
+**Schema on success**:
+```json
+[
+    {
+        "activityId": 93401981092,
+        "time": "2025-03-07T22:34:50+0000",
+        "description": "PFIZER INC",
+        "accountNumber": "99415888",
+        "type": "TRADE",
+        "status": "VALID",
+        "subAccount": "MARGIN",
+        "tradeDate": "2025-03-07T05:00:00+0000",
+        "settlementDate": "2025-03-07T05:00:00+0000",
+        "positionId": 2103987573,
+        "netAmount": -51.35,
+        "transferItems": [
+            {
+                "instrument": {
+                    "assetType": "EQUITY",
+                    "symbol": "PFE",
+                    "description": "PFIZER INC"
+                },
+                "amount": 1.9191,
+                "cost": -51.35,
+                "price": 26.75702,
+                "positionEffect": "OPENING"
+            }
+        ]
+    }
+]
+```
 
 
 
-### UserPreference
 
-#### **GET** `/userPreference`
+### User Preference
 
-Get user preference information for the logged in user.
+#### **GET** `/trader/v1/userPreference`
+Get user preference information for the logged-in user.
 
-##### Parameters
+Includes account nicknames, streamer connection details, and market data permissions.
 
-No parameters
+#### Parameters
+No parameters.
 
-##### Responses
-
-**Success Response (200)**: List of user preference values.
+#### Responses
+**Success Response (200)**: A list containing user preference values.
 
 **Schema on success**:
 ```json
@@ -1425,33 +928,32 @@ No parameters
     {
         "accounts": [
             {
-                "accountNumber": "string",
-                "primaryAccount": false,
-                "type": "string",
-                "nickName": "string",
-                "accountColor": "string",
-                "displayAcctId": "string",
-                "autoPositionEffect": false
+                "accountNumber": "97485470",
+                "primaryAccount": true,
+                "type": "MARGIN",
+                "nickName": "My Trading Account"
             }
         ],
         "streamerInfo": [
             {
-                "streamerSocketUrl": "string",
-                "schwabClientCustomerId": "string",
-                "schwabClientCorrelId": "string",
-                "schwabClientChannel": "string",
-                "schwabClientFunctionId": "string"
+                "streamerSocketUrl": "wss://...",
+                "schwabClientCustomerId": "...",
+                "schwabClientCorrelId": "..."
             }
         ],
         "offers": [
             {
-                "level2Permissions": false,
-                "mktDataPermission": "string"
+                "level2Permissions": true,
+                "mktDataPermission": "PRO"
             }
         ]
     }
 ]
 ```
+
+**Error Responses**:
+*   **400 Bad Request**: Invalid request format.
+*   **401 Unauthorized**: Invalid or expired token.
 
 
 
@@ -1462,55 +964,18 @@ The Market Data API provides endpoints for quotes, price history, option chains,
 
 ## Quotes
 
-### **GET** `/quotes`
-### **GET** `/quotes/{symbol}`
-Get a quote for a single symbol.
-
-#### Parameters
-
-* `symbol` (string (path), required): The symbol to retrieve a quote for.
-* `fields` (string (query)): Optional. Comma-separated list of fields to return.
-
-#### Responses
-**Success Response (200)**: Quote data for the requested symbol.
-
-**Schema on success**:
-```json
-{
-    "AAPL": {
-        "assetMainType": "EQUITY",
-        "assetSubType": "COE",
-        "quoteType": "NBBO",
-        "realtime": true,
-        "symbol": "AAPL",
-        "quote": {
-            "askPrice": 221.07,
-            "askSize": 1,
-            "bidPrice": 220.76,
-            "bidSize": 3,
-            "lastPrice": 220.97,
-            "mark": 220.84,
-            "netChange": -6.51,
-            "netPercentChange": -2.86179005,
-            "quoteTime": 1741737578221,
-            "totalVolume": 76137410
-        },
-        "reference": {
-            "cusip": "037833100",
-            "description": "APPLE INC",
-            "exchangeName": "NASDAQ"
-        }
-    }
-}
-```
-
+### **GET** `/marketdata/v1/quotes`
 Get quotes for a list of one or more symbols.
 
 #### Parameters
 
-* `symbols` (string (query), required): A comma-separated list of symbols (e.g., `AAPL,MSFT,GOOG`).
-* `fields` (string (query)): Optional. Comma-separated list of fields to return. By default, returns all fields.
-* `indicative` (boolean (query)): Optional. Include indicative quotes. Default `false`.
+* `symbols` (string (query), required): A comma-separated list of one or more symbols to look up.
+    * *Example:* `AAPL,BAC,$DJI,$SPX,AMZN  230317C01360000`
+* `fields` (string (query)): Optional. Comma-separated list of root nodes to return.
+    * *Possible Values:* `quote`, `fundamental`, `extended`, `reference`, `regular`.
+    * *Default:* `all`.
+* `indicative` (boolean (query)): Optional. Include indicative symbol quotes for ETF symbols in the request.
+    * *Default:* `false`.
 
 #### Responses
 **Success Response (200)**: A map of symbols to their quote data.
@@ -1520,26 +985,91 @@ Get quotes for a list of one or more symbols.
 {
     "AAPL": {
         "assetMainType": "EQUITY",
-        "assetSubType": "COE",
+        "symbol": "AAPL",
         "quoteType": "NBBO",
         "realtime": true,
-        "symbol": "AAPL",
-        "quote": {
-            "askPrice": 221.07,
-            "askSize": 1,
-            "bidPrice": 220.76,
-            "bidSize": 3,
-            "lastPrice": 220.97,
-            "mark": 220.84,
-            "netChange": -6.51,
-            "netPercentChange": -2.86179005,
-            "quoteTime": 1741737578221,
-            "totalVolume": 76137410
-        },
+        "ssid": 1973757747,
         "reference": {
             "cusip": "037833100",
-            "description": "APPLE INC",
+            "description": "Apple Inc",
+            "exchange": "Q",
             "exchangeName": "NASDAQ"
+        },
+        "quote": {
+            "52WeekHigh": 169,
+            "52WeekLow": 1.1,
+            "askPrice": 168.41,
+            "askSize": 400,
+            "bidPrice": 168.4,
+            "bidSize": 400,
+            "lastPrice": 168.405,
+            "mark": 168.405,
+            "netChange": -9.165,
+            "netPercentChange": -5.1613,
+            "quoteTime": 1644854683672,
+            "securityStatus": "Normal",
+            "totalVolume": 22361159
+        },
+        "fundamental": {
+            "avg10DaysVolume": 1,
+            "divYield": 1.1,
+            "peRatio": 1.1
+        }
+    }
+}
+```
+
+### **GET** `/marketdata/v1/{symbol}/quotes`
+Get a quote for a single symbol.
+
+#### Parameters
+
+* `symbol` (string (path), required): The symbol to retrieve a quote for (e.g., `TSLA`).
+* `fields` (string (query)): Optional. Comma-separated list of root nodes to return (`quote`, `fundamental`, `extended`, `reference`, `regular`).
+
+#### Responses
+**Success Response (200)**: Quote data for the requested symbol.
+
+> [!IMPORTANT]
+> **Documentation Discrepancy:** The official Schwab documentation currently shows a "Price History" (candles) schema for this endpoint's example. However, empirical testing (see `e2e_dumps/quote.json`) confirms that this endpoint returns a standard quote object keyed by the symbol, identical to the plural `/quotes` endpoint but containing only one entry.
+
+**Official Documentation Example (showing unexpected candle data):**
+```json
+{
+    "symbol": "AAPL",
+    "empty": false,
+    "previousClose": 174.56,
+    "previousCloseDate": 1639029600000,
+    "candles": [
+        {
+            "open": 175.01,
+            "high": 175.15,
+            "low": 175.01,
+            "close": 175.04,
+            "volume": 10719,
+            "datetime": 1639137600000
+        }
+    ]
+}
+```
+
+**Actual Observed Schema (Recommended for developers):**
+```json
+{
+    "AAPL": {
+        "assetMainType": "EQUITY",
+        "symbol": "AAPL",
+        "quoteType": "NBBO",
+        "realtime": true,
+        "quote": {
+            "52WeekHigh": 288.62,
+            "52WeekLow": 169.2101,
+            "askPrice": 257.0,
+            "bidPrice": 256.65,
+            "lastPrice": 256.65,
+            "mark": 257.46,
+            "netChange": -3.64,
+            "quoteTime": 1772845139628
         }
     }
 }
@@ -1547,64 +1077,84 @@ Get quotes for a list of one or more symbols.
 
 ## Price History
 
-### **GET** `/pricehistory`
+### **GET** `/marketdata/v1/pricehistory`
 Get historical price data (candles) for a specific symbol.
 
 #### Parameters
 
-* `symbol` (string (query), required): The symbol to retrieve price history for.
-* `periodType` (string (query), required): The type of period to show. Valid values are `day`, `month`, `year`, `ytd`. Default is `day`.
-* `period` (integer (query), required): The number of periods to show. Example: For a `periodType` of `day`, a `period` of `10` shows 10 days of history.
-* `frequencyType` (string (query), required): The type of frequency with which a new candle is formed. Valid values: `minute`, `daily`, `weekly`, `monthly`.
-* `frequency` (integer (query), required): The number of the frequencyType to be included in each candle. Valid values for minute: 1, 5, 10, 15, 30. Valid values for daily/weekly/monthly: 1.
-* `startDate` (integer (query), required): Start date as milliseconds since epoch.
-* `endDate` (integer (query), required): End date as milliseconds since epoch.
-* `needExtendedHoursData` (boolean (query), required): `true` to return extended hours data, `false` for regular market hours only. Default is `true`.
+* `symbol` (string (query), required): The symbol to retrieve price history for (e.g., `AAPL`).
+* `periodType` (string (query)): The chart period being requested (`day`, `month`, `year`, `ytd`).
+* `period` (integer (query)): The number of chart period types.
+    * *Valid values for `day`:* 1, 2, 3, 4, 5, 10
+    * *Valid values for `month`:* 1, 2, 3, 6
+    * *Valid values for `year`:* 1, 2, 3, 5, 10, 15, 20
+    * *Valid values for `ytd`:* 1
+* `frequencyType` (string (query)): The frequency with which a new candle is formed (`minute`, `daily`, `weekly`, `monthly`).
+    * *If `periodType` is `day`:* `minute` is the only valid value.
+    * *If `periodType` is `month`:* `daily`, `weekly`.
+    * *If `periodType` is `year`:* `daily`, `weekly`, `monthly`.
+    * *If `periodType` is `ytd`:* `daily`, `weekly`.
+* `frequency` (integer (query)): The time frequency duration.
+    * *If `frequencyType` is `minute`:* 1, 5, 10, 15, 30.
+    * *If `frequencyType` is `daily`, `weekly`, or `monthly`:* 1.
+* `startDate` (integer (query)): Start date as milliseconds since the UNIX epoch.
+* `endDate` (integer (query)): End date as milliseconds since the UNIX epoch. Default is the market close of the previous business day.
+* `needExtendedHoursData` (boolean (query)): If `true`, returns extended hours data.
+* `needPreviousClose` (boolean (query)): If `true`, includes the previous day's close price and date.
 
 #### Responses
-**Success Response (200)**: A valid price history response containing an array of candles.
+**Success Response (200)**: Historical price data containing an array of candles.
 
 **Schema on success**:
 ```json
 {
     "candles": [
         {
-            "open": 164.5,
-            "high": 165.2,
-            "low": 163.8,
-            "close": 164.1,
-            "volume": 1200000,
-            "datetime": 1741737600000
+            "open": 175.01,
+            "high": 175.15,
+            "low": 175.01,
+            "close": 175.04,
+            "volume": 10719,
+            "datetime": 1639137600000
         }
     ],
-    "symbol": "GOOG",
-    "empty": false
+    "symbol": "AAPL",
+    "empty": false,
+    "previousClose": 174.56,
+    "previousCloseDate": 1639029600000
 }
 ```
 
 ## Option Chains
 
-### **GET** `/chains`
+### **GET** `/marketdata/v1/chains`
 Get an option chain for a specific underlying symbol.
 
 #### Parameters
 
-* `symbol` (string (query), required): The underlying symbol.
-* `contractType` (string (query), required): Type of contracts to return. Valid values are `CALL`, `PUT`, `ALL`. Default is `ALL`.
-* `strikeCount` (integer (query), required): The number of strikes to return above and below the at-the-money price.
-* `includeQuotes` (boolean (query), required): Include quotes for options in the option chain. Default is `false`.
-* `strategy` (string (query), required): Default is `SINGLE`. Can be used to return chains formatted for complex strategies (e.g. `ANALYTICAL`, `COVERED`, `VERTICAL`, `CALENDAR`, `STRADDLE`, `STRANGLE`, `BUTTERFLY`, `CONDOR`, `DIAGONAL`, `COLLAR`, `ROLL`).
-* `interval` (integer (query), required): Strike interval for spread strategy chains.
-* `strike` (number (query), required): Return options only at this specific strike price.
-* `range` (string (query), required): Return options for the given range. Valid values are `ITM` (in the money), `NTM` (near the money), `OTM` (out of the money), `SAK` (strikes above market), `SBK` (strikes below market), `SNK` (strikes near market), `ALL` (all strikes).
-* `fromDate` (string (query), required): Only return expirations after this date. Format: `yyyy-MM-dd`.
-* `toDate` (string (query), required): Only return expirations before this date. Format: `yyyy-MM-dd`.
-* `volatility` (number (query), required): Volatility to use in calculations. Applies only to `ANALYTICAL` strategy chains.
-* `underlyingPrice` (number (query), required): Underlying price to use in calculations. Applies only to `ANALYTICAL` strategy chains.
-* `interestRate` (number (query), required): Interest rate to use in calculations. Applies only to `ANALYTICAL` strategy chains.
-* `daysToExpiration` (integer (query), required): Days to expiration to use in calculations. Applies only to `ANALYTICAL` strategy chains.
-* `expMonth` (string (query), required): Return only options expiring in the specified month. Valid values are `JAN`, `FEB`, `MAR`, `APR`, `MAY`, `JUN`, `JUL`, `AUG`, `SEP`, `OCT`, `NOV`, `DEC`, `ALL`. Default is `ALL`.
-* `optionType` (string (query), required): Type of option contracts to return. Valid values: `S` (Standard), `NS` (Non-Standard), `ALL` (All options). Default is `ALL`.
+* `symbol` (string (query), required): The underlying symbol (e.g., `AAPL`).
+* `contractType` (string (query)): Type of contracts to return. Valid values: `CALL`, `PUT`, `ALL`.
+* `strikeCount` (integer (query)): The number of strikes to return above and below the at-the-money price.
+* `includeUnderlyingQuote` (boolean (query)): Include the underlying symbol's quote in the response.
+* `strategy` (string (query)): Strategy for the chain. Default is `SINGLE`.
+    * *Options:* `SINGLE`, `ANALYTICAL`, `COVERED`, `VERTICAL`, `CALENDAR`, `STRANGLE`, `STRADDLE`, `BUTTERFLY`, `CONDOR`, `DIAGONAL`, `COLLAR`, `ROLL`.
+    * *Note:* `ANALYTICAL` allows using `volatility`, `underlyingPrice`, `interestRate`, and `daysToExpiration` for theoretical calculations.
+* `interval` (number (query)): Strike interval for spread strategy chains.
+* `strike` (number (query)): Return options only at this specific strike price.
+* `range` (string (query)): Range filter.
+    * *Options:* `ITM` (In-the-Money), `NTM` (Near-the-Money), `OTM` (Out-of-the-Money), `SAK` (Strikes Above Market), `SBK` (Strikes Below Market), `SNK` (Strikes Near Market), `ALL` (All strikes).
+* `fromDate` (string (query)): Only return expirations after this date. Format: `yyyy-MM-dd`.
+* `toDate` (string (query)): Only return expirations before this date. Format: `yyyy-MM-dd`.
+* `volatility` (number (query)): Volatility to use in `ANALYTICAL` calculations.
+* `underlyingPrice` (number (query)): Underlying price to use in `ANALYTICAL` calculations.
+* `interestRate` (number (query)): Interest rate to use in `ANALYTICAL` calculations.
+* `daysToExpiration` (integer (query)): Days to expiration to use in `ANALYTICAL` calculations.
+* `expMonth` (string (query)): Return only options expiring in the specified month.
+    * *Values:* `JAN`, `FEB`, `MAR`, `APR`, `MAY`, `JUN`, `JUL`, `AUG`, `SEP`, `OCT`, `NOV`, `DEC`, `ALL`.
+* `optionType` (string (query)): Type of option contracts to return.
+    * *Values:* `S` (Standard), `NS` (Non-Standard), `ALL`.
+* `entitlement` (string (query)): Applicable only for retail tokens.
+    * *Values:* `PP` (PayingPro), `NP` (NonPro), `PN` (NonPayingPro).
 
 #### Responses
 **Success Response (200)**: A valid option chain response.
@@ -1612,69 +1162,53 @@ Get an option chain for a specific underlying symbol.
 **Schema on success**:
 ```json
 {
-    "symbol": "GOOG",
+    "symbol": "AAPL",
     "status": "SUCCESS",
     "underlying": {
-        "symbol": "GOOG",
-        "description": "ALPHABET INC C",
-        "last": 164.08,
-        "mark": 163.94,
+        "symbol": "AAPL",
+        "description": "APPLE INC",
+        "last": 257.46,
+        "mark": 257.46,
+        "bid": 256.65,
+        "ask": 257.0,
+        "totalVolume": 41120042,
         "delayed": false
     },
     "strategy": "SINGLE",
-    "isDelayed": false,
-    "numberOfContracts": 132,
+    "underlyingPrice": 257.46,
+    "volatility": 29.0,
+    "daysToExpiration": 2.0,
     "callExpDateMap": {
-        "2025-04-25:29": {
-            "95.0": [
+        "2026-03-09:2": {
+            "252.5": [
                 {
                     "putCall": "CALL",
-                    "symbol": "GOOG 250425C00095000",
-                    "description": "GOOG 04/25/2025 95.00 C",
-                    "exchangeName": "OPR",
-                    "bid": 67.45,
-                    "ask": 71.45,
-                    "last": 0.0,
-                    "mark": 69.45,
-                    "strikePrice": 95.0,
-                    "expirationDate": "2025-04-25T20:00:00.000+00:00",
-                    "daysToExpiration": 29,
+                    "symbol": "AAPL  260309C00252500",
+                    "description": "AAPL 03/09/2026 252.50 C",
+                    "bid": 5.75,
+                    "ask": 6.1,
+                    "last": 6.25,
+                    "mark": 5.93,
+                    "strikePrice": 252.5,
+                    "expirationDate": "2026-03-09T20:00:00.000+00:00",
+                    "daysToExpiration": 2,
                     "multiplier": 100.0,
                     "inTheMoney": true
                 }
             ]
         }
     },
-    "putExpDateMap": {
-        "2025-04-25:29": {
-            "95.0": [
-                {
-                    "putCall": "PUT",
-                    "symbol": "GOOG 250425P00095000",
-                    "description": "GOOG 04/25/2025 95.00 P",
-                    "exchangeName": "OPR",
-                    "bid": 0.0,
-                    "ask": 0.02,
-                    "last": 0.0,
-                    "mark": 0.01,
-                    "strikePrice": 95.0,
-                    "expirationDate": "2025-04-25T20:00:00.000+00:00",
-                    "daysToExpiration": 29,
-                    "multiplier": 100.0,
-                    "inTheMoney": false
-                }
-            ]
-        }
-    }
+    "putExpDateMap": { ... }
 }
+
 ```
 
-### **GET** `/expirationchain`
+### **GET** `/marketdata/v1/expirationchain`
 Get an option expiration chain for a specific underlying symbol.
 
 #### Parameters
 
-* `symbol` (string (query), required): The underlying symbol.
+* `symbol` (string (query), required): The underlying symbol (e.g., `AAPL`).
 
 #### Responses
 **Success Response (200)**: A list of option expirations.
@@ -1684,11 +1218,11 @@ Get an option expiration chain for a specific underlying symbol.
 {
     "expirationList": [
         {
-            "expirationDate": "2025-03-14",
+            "expirationDate": "2026-03-09",
             "daysToExpiration": 2,
             "expirationType": "W",
             "settlementType": "P",
-            "optionRoots": "GOOG",
+            "optionRoots": "AAPL",
             "standard": true
         }
     ]
@@ -1697,32 +1231,36 @@ Get an option expiration chain for a specific underlying symbol.
 
 ## Movers
 
-### **GET** `/movers/{symbol}`
-Get movers for a specific index.
+### **GET** `/marketdata/v1/movers/{symbol}`
+Get a list of top 10 securities movement for a specific index.
 
 #### Parameters
 
-* `symbol` (string (path), required): The index symbol. Valid values: `$DJI`, `$COMPX`, `$SPX`, `NYSE`, `NASDAQ`, `OTCBB`, `INDEX_ALL`, `EQUITY_ALL`, `OPTION_ALL`, `OPTION_PUT`, `OPTION_CALL`.
-* `sort` (string (query), required): Sort direction. Valid values: `VOLUME`, `TRADES`, `PERCENT_CHANGE_UP`, `PERCENT_CHANGE_DOWN`.
-* `frequency` (integer (query), required): Frequency in minutes. Valid values: `0`, `1`, `5`, `10`, `30`, `60`.
+* `symbol` (string (path), required): The index symbol.
+    * *Values:* `$DJI`, `$COMPX`, `$SPX`, `NYSE`, `NASDAQ`, `OTCBB`, `INDEX_ALL`, `EQUITY_ALL`, `OPTION_ALL`, `OPTION_PUT`, `OPTION_CALL`.
+* `sort` (string (query)): Attribute to sort by.
+    * *Values:* `VOLUME`, `TRADES`, `PERCENT_CHANGE_UP`, `PERCENT_CHANGE_DOWN`.
+* `frequency` (integer (query)): To return movers with specified directions of up or down.
+    * *Values:* `0`, `1`, `5`, `10`, `30`, `60`.
+    * *Default:* `0`.
 
 #### Responses
-**Success Response (200)**: Top movers for the requested index.
+**Success Response (200)**: Analytics for the symbol was returned successfully.
 
 **Schema on success**:
 ```json
 {
     "screeners": [
         {
+            "symbol": "NVDA",
             "description": "NVIDIA CORP",
-            "volume": 65591131,
             "lastPrice": 119.26,
             "netChange": 3.68,
-            "marketShare": 13.84,
-            "totalVolume": 473944635,
-            "trades": 522082,
             "netPercentChange": 0.0318,
-            "symbol": "NVDA"
+            "volume": 65591131,
+            "totalVolume": 473944635,
+            "marketShare": 13.84,
+            "trades": 522082
         }
     ]
 }
@@ -1730,50 +1268,139 @@ Get movers for a specific index.
 
 ## Market Hours
 
-### **GET** `/markets`
-Get market hours for multiple markets.
+### **GET** `/marketdata/v1/markets`
+Get Market Hours for different markets.
 
 #### Parameters
 
-* `markets` (string (query), required): Comma-separated list of markets (e.g., `equity,option,future`).
-* `date` (string (query), required): Date in `yyyy-MM-dd` format.
+* `markets` (array[string], required): List of markets.
+    * *Values:* `equity`, `option`, `bond`, `future`, `forex`.
+* `date` (string (query)): Valid date range is from current date to 1 year from today. Defaults to current day. Format: `YYYY-MM-DD`.
 
-### **GET** `/markets/{market_id}`
-Get market hours for a single market.
+#### Responses
+**Success Response (200)**: OK
+
+**Schema on success**:
+```json
+{
+    "equity": {
+        "EQ": {
+            "date": "2022-04-14",
+            "marketType": "EQUITY",
+            "product": "EQ",
+            "productName": "equity",
+            "isOpen": true,
+            "sessionHours": {
+                "preMarket": [
+                    {
+                        "start": "2022-04-14T07:00:00-04:00",
+                        "end": "2022-04-14T09:30:00-04:00"
+                    }
+                ],
+                "regularMarket": [
+                    {
+                        "start": "2022-04-14T09:30:00-04:00",
+                        "end": "2022-04-14T16:00:00-04:00"
+                    }
+                ],
+                "postMarket": [
+                    {
+                        "start": "2022-04-14T16:00:00-04:00",
+                        "end": "2022-04-14T20:00:00-04:00"
+                    }
+                ]
+            }
+        }
+    },
+    "option": {
+        "EQO": {
+            "date": "2022-04-14",
+            "marketType": "OPTION",
+            "product": "EQO",
+            "productName": "equity option",
+            "isOpen": true,
+            "sessionHours": {
+                "regularMarket": [
+                    {
+                        "start": "2022-04-14T09:30:00-04:00",
+                        "end": "2022-04-14T16:00:00-04:00"
+                    }
+                ]
+            }
+        }
+    }
+}
+```
+
+### **GET** `/marketdata/v1/markets/{market_id}`
+Get Market Hours for a single market.
 
 #### Parameters
 
-* `market_id` (string (path), required): The market ID (e.g., `equity`, `option`).
-* `date` (string (query), required): Date in `yyyy-MM-dd` format.
+* `market_id` (string (path), required): The market ID.
+    * *Values:* `equity`, `option`, `bond`, `future`, `forex`.
+* `date` (string (query)): Valid date range is from current date to 1 year from today. Defaults to current day. Format: `YYYY-MM-DD`.
+
+#### Responses
+**Success Response (200)**: OK
+
+**Schema on success**:
+```json
+{
+    "equity": {
+        "EQ": {
+            "date": "2022-04-14",
+            "marketType": "EQUITY",
+            "product": "EQ",
+            "productName": "equity",
+            "isOpen": true,
+            "sessionHours": {
+                "preMarket": [
+                    {
+                        "start": "2022-04-14T07:00:00-04:00",
+                        "end": "2022-04-14T09:30:00-04:00"
+                    }
+                ],
+                "regularMarket": [
+                    {
+                        "start": "2022-04-14T09:30:00-04:00",
+                        "end": "2022-04-14T16:00:00-04:00"
+                    }
+                ],
+                "postMarket": [
+                    {
+                        "start": "2022-04-14T16:00:00-04:00",
+                        "end": "2022-04-14T20:00:00-04:00"
+                    }
+                ]
+            }
+        }
+    }
+}
+```
 
 ## Instruments
 
-### **GET** `/instruments`
-Search for instruments.
+### **GET** `/marketdata/v1/instruments`
+Get instrument details by symbols and projections.
 
 #### Parameters
 
-* `symbol` (string (query), required): Symbol or search term.
-* `projection` (string (query), required): Search type. Valid values: `symbol-search`, `symbol-regex`, `desc-search`, `desc-regex`, `search`, `fundamental`.
-
-### **GET** `/instruments/{cusip_id}`
-Get instrument details by CUSIP.
-
-#### Parameters
-
-* `cusip_id` (string (path), required): The CUSIP of the instrument.
+* `symbol` (string (query), required): Symbol of a security or search term. Can be a comma-separated list.
+* `projection` (string (query), required): Search type.
+    * *Values:* `symbol-search`, `symbol-regex`, `desc-search`, `desc-regex`, `search`, `fundamental`.
 
 #### Responses
-**Success Response (200)**: Instrument data.
+**Success Response (200)**: OK
 
 **Schema on success**:
 ```json
 {
     "instruments": [
         {
-            "cusip": "02079K107",
-            "symbol": "GOOG",
-            "description": "ALPHABET INC C",
+            "cusip": "037833100",
+            "symbol": "AAPL",
+            "description": "Apple Inc",
             "exchange": "NASDAQ",
             "assetType": "EQUITY"
         }
@@ -1781,179 +1408,205 @@ Get instrument details by CUSIP.
 }
 ```
 
+> [!TIP]
+> When using `projection=fundamental`, each instrument object will also contain a `fundamental` key with detailed data (e.g., `high52`, `peRatio`, `dividendAmount`, etc.).
+
+### **GET** `/marketdata/v1/instruments/{cusip_id}`
+Get instrument details by CUSIP.
+
+#### Parameters
+
+* `cusip_id` (string (path), required): The CUSIP of the instrument.
+
+#### Responses
+**Success Response (200)**: OK
+
+**Schema on success**:
+```json
+{
+    "cusip": "037833100",
+    "symbol": "AAPL",
+    "description": "Apple Inc",
+    "exchange": "NASDAQ",
+    "assetType": "EQUITY"
+}
+```
+
 ## Streaming Data (WebSocket)
 
-### Streaming Data Best Practices
+The Streamer API enables real-time market data and account activity streaming via WebSockets. Authentication is provided via the standard OAuth access token.
 
-The Schwab Streaming API utilizes WebSockets to deliver real-time data, which requires a completely different connection pattern than the standard HTTP REST endpoints.
+### **1. Connection & Authentication**
 
-### **1. Dedicated Login Sequence**
-Before you can subscribe to any streams, you must perform a dedicated login via the WebSocket connection. The standard HTTP access token is not implicitly used by the socket; it must be authenticated as part of a `login` request payload over the stream.
+1.  **Get Streamer Info:** Call `GET /userPreference` to retrieve `streamerSocketUrl`, `schwabClientCustomerId`, `schwabClientCorrelId`, `schwabClientChannel`, and `schwabClientFunctionId`.
+2.  **Connect:** Establish a WebSocket connection to the `streamerSocketUrl`.
+3.  **Login:** Send an `ADMIN LOGIN` request immediately after connecting.
 
-### **2. Handler Registration Order**
-When sending a subscription command (e.g., `ADD` or `SUBS` for a specific service), data may begin flowing back immediately. Ensure your client application registers its message handlers or callbacks *before* it dispatches the subscription request. If data arrives before handlers are ready, those messages will be permanently lost.
+**Login Request Example:**
+```json
+{
+    "requests": [
+        {
+            "requestid": "1",
+            "service": "ADMIN",
+            "command": "LOGIN",
+            "SchwabClientCustomerId": "YOUR_CUSTOMER_ID",
+            "SchwabClientCorrelId": "YOUR_SESSION_ID",
+            "parameters": {
+                "Authorization": "YOUR_ACCESS_TOKEN",
+                "SchwabClientChannel": "N9",
+                "SchwabClientFunctionId": "APIAPP"
+            }
+        }
+    ]
+}
+```
 
-### **3. Changes vs. Whole Data Responses**
-Different streams deliver data in different paradigms:
-* **Changes (Deltas):** Streams like Level 1 Equities (`LEVELONE_EQUITIES`), Level 1 Options, and Level 1 Futures only stream *changes* to the data. The first message contains the full current state, but subsequent messages will only include the keys that have been updated. Your application must cache the initial state and merge these updates.
-* **Whole Data:** Order Book streams (like `NYSE_BOOK` or `NASDAQ_BOOK`) stream the *entire* state of the book with every message, overwriting whatever you previously had.
+### **2. Services & Delivery Types**
 
-### **4. Numerical Key Mappings**
-Raw WebSocket payloads return data mapped to numeric keys to save bandwidth (e.g., instead of `"Bid Price": 217.86`, the payload will be `"1": 217.86`). Always ensure your client maintains a translation mapping to decode these integers back to their human-readable property names. Note that `"0"` is typically always reserved for the ticker symbol or stream key.
+| Service Name | Description | Delivery Type |
+| :--- | :--- | :--- |
+| `LEVELONE_EQUITIES` | Level 1 Equities | Change (Deltas) |
+| `LEVELONE_OPTIONS` | Level 1 Options | Change (Deltas) |
+| `LEVELONE_FUTURES` | Level 1 Futures | Change (Deltas) |
+| `LEVELONE_FUTURES_OPTIONS` | Level 1 Futures Options | Change (Deltas) |
+| `LEVELONE_FOREX` | Level 1 Forex | Change (Deltas) |
+| `NYSE_BOOK` | Level 2 Book (NYSE) | Whole (Overwrite) |
+| `NASDAQ_BOOK` | Level 2 Book (NASDAQ) | Whole (Overwrite) |
+| `OPTIONS_BOOK` | Level 2 Book (Options) | Whole (Overwrite) |
+| `CHART_EQUITY` | Equity Candles (1-min) | All Sequence |
+| `CHART_FUTURES` | Futures Candles (1-min) | All Sequence |
+| `SCREENER_EQUITY` | Equity Gainers/Losers | Whole |
+| `SCREENER_OPTION` | Option Gainers/Losers | Whole |
+| `ACCT_ACTIVITY` | Account Fills/Activity | All Sequence |
 
-### Streaming Field Reference
+*   **Change:** Only updated fields are sent. First response contains the full state.
+*   **Whole:** The entire snapshot is sent with every update.
+*   **All Sequence:** Every data point is sent with a sequence number; data is not conflated.
 
-The following tables map the numeric keys in streaming payloads to their human-readable field names.
+### **3. Commands**
 
-### **LEVELONE_EQUITIES**
-| Key | Field Name |
-| :--- | :--- |
-| 0 | Symbol |
-| 1 | Bid Price |
-| 2 | Ask Price |
-| 3 | Last Price |
-| 4 | Bid Size |
-| 5 | Ask Size |
-| 6 | Ask ID |
-| 7 | Bid ID |
-| 8 | Total Volume |
-| 9 | Last Size |
-| 10 | High Price |
-| 11 | Low Price |
-| 12 | Close Price |
-| 13 | Exchange ID |
-| 14 | Marginable |
-| 15 | Description |
-| 16 | Last ID |
-| 17 | Open Price |
-| 18 | Net Change |
-| 19 | 52 Week High |
-| 20 | 52 Week Low |
-| 21 | PE Ratio |
-| 22 | Annual Dividend Amount |
-| 23 | Dividend Yield |
-| 24 | NAV |
-| 25 | Exchange Name |
-| 26 | Dividend Date |
-| 27 | Regular Market Quote |
-| 28 | Regular Market Trade |
-| 29 | Regular Market Last Price |
-| 30 | Regular Market Last Size |
-| 31 | Regular Market Net Change |
-| 32 | Security Status |
-| 33 | Mark Price |
-| 34 | Quote Time in Long |
-| 35 | Trade Time in Long |
-| 36 | Regular Market Trade Time in Long |
-| 37 | Bid Time |
-| 38 | Ask Time |
-| 39 | Ask MIC ID |
-| 40 | Bid MIC ID |
-| 41 | Last MIC ID |
-| 42 | Net Percent Change |
-| 43 | Regular Market Percent Change |
-| 44 | Mark Price Net Change |
-| 45 | Mark Price Percent Change |
-| 46 | Hard to Borrow Quantity |
-| 47 | Hard To Borrow Rate |
-| 48 | Hard to Borrow |
-| 49 | shortable |
-| 50 | Post-Market Net Change |
-| 51 | Post-Market Percent Change |
+*   **`SUBS`**: Subscribe to symbols. **Overwrites** previous subscriptions for that service.
+*   **`ADD`**: Adds symbols to the current subscription list for a service.
+*   **`UNSUBS`**: Removes specific symbols.
+*   **`VIEW`**: Changes the field subscription for a service (applies to all symbols).
+*   **`LOGOUT`**: Closes the connection.
 
-### **LEVELONE_OPTIONS**
-| Key | Field Name |
-| :--- | :--- |
-| 0 | Symbol |
-| 1 | Description |
-| 2 | Bid Price |
-| 3 | Ask Price |
-| 4 | Last Price |
-| 5 | High Price |
-| 6 | Low Price |
-| 7 | Close Price |
-| 8 | Total Volume |
-| 9 | Open Interest |
-| 10 | Volatility |
-| 11 | Money Intrinsic Value |
-| 12 | Expiration Year |
-| 13 | Multiplier |
-| 14 | Digits |
-| 15 | Open Price |
-| 16 | Bid Size |
-| 17 | Ask Size |
-| 18 | Last Size |
-| 19 | Net Change |
-| 20 | Strike Price |
-| 21 | Contract Type |
-| 22 | Underlying |
-| 23 | Expiration Month |
-| 24 | Deliverables |
-| 25 | Time Value |
-| 26 | Expiration Day |
-| 27 | Days to Expiration |
-| 28 | Delta |
-| 29 | Gamma |
-| 30 | Theta |
-| 31 | Vega |
-| 32 | Rho |
-| 33 | Security Status |
-| 34 | Theoretical Option Value |
-| 35 | Underlying Price |
-| 36 | UV Expiration Type |
-| 37 | Mark Price |
-| 38 | Quote Time in Long |
-| 39 | Trade Time in Long |
-| 40 | Exchange |
-| 41 | Exchange Name |
-| 42 | Last Trading Day |
-| 43 | Settlement Type |
-| 44 | Net Percent Change |
-| 45 | Mark Price Net Change |
-| 46 | Mark Price Percent Change |
-| 47 | Implied Yield |
-| 48 | isPennyPilot |
-| 49 | Option Root |
-| 50 | 52 Week High |
-| 51 | 52 Week Low |
-| 52 | Indicative Ask Price |
-| 53 | Indicative Bid Price |
-| 54 | Indicative Quote Time |
-| 55 | Exercise Type |
+### **4. Symbol Formats**
 
-### **CHART_EQUITY**
-| Key | Field Name |
-| :--- | :--- |
-| 0 | Key |
-| 1 | Sequence |
-| 2 | Open Price |
-| 3 | High Price |
-| 4 | Low Price |
-| 5 | Close Price |
-| 6 | Volume |
-| 7 | Chart Time |
-| 8 | Chart Day |
+*   **Options:** `RRRRRRYYMMDDsWWWWWddd` (Space-filled root, YYMMDD, C/P, Whole Strike, Decimal Strike).
+    *   *Example:* `AAPL  251219C00200000`
+*   **Futures:** `/` + `Root` + `Month Code` + `Year Code`.
+    *   *Month Codes:* F(Jan), G(Feb), H(Mar), J(Apr), K(May), M(Jun), N(Jul), Q(Aug), U(Sep), V(Oct), X(Nov), Z(Dec).
+    *   *Example:* `/ESZ24`
+*   **Futures Options:** `./` + `Root` + `Month` + `Year` + `C/P` + `Strike`.
+    *   *Example:* `./OZCZ23C565`
 
-### **ACCT_ACTIVITY**
-| Key | Field Name |
-| :--- | :--- |
-| seq | Sequence |
-| key | Key |
-| 1 | Account |
-| 2 | Message Type |
-| 3 | Message Data |
+### **5. Response Field Reference**
+
+Numeric keys in the `content` block map to the following fields:
+
+#### **LEVELONE_EQUITIES**
+| Key | Field | Key | Field |
+| :--- | :--- | :--- | :--- |
+| 0 | Symbol | 1 | Bid Price |
+| 2 | Ask Price | 3 | Last Price |
+| 4 | Bid Size (Lots) | 5 | Ask Size (Lots) |
+| 8 | Total Volume | 10 | High Price |
+| 11 | Low Price | 12 | Close Price |
+| 13 | Exchange ID | 15 | Description |
+| 18 | Net Change | 19 | 52 Week High |
+| 20 | 52 Week Low | 32 | Security Status |
+| 33 | Mark Price | 42 | Net % Change |
+
+#### **LEVELONE_OPTIONS**
+| Key | Field | Key | Field |
+| :--- | :--- | :--- | :--- |
+| 0 | Symbol | 2 | Bid Price |
+| 3 | Ask Price | 4 | Last Price |
+| 8 | Total Volume | 9 | Open Interest |
+| 10 | Volatility | 11 | Intrinsic Value |
+| 20 | Strike Price | 27 | Days to Expiration |
+| 28 | Delta | 30 | Theta |
+
+#### **CHART_EQUITY**
+| Key | Field | Key | Field |
+| :--- | :--- | :--- | :--- |
+| 0 | Key | 1 | Open Price |
+| 2 | High Price | 3 | Low Price |
+| 4 | Close Price | 5 | Volume |
+| 6 | Sequence | 7 | Chart Time |
+
+#### **SCREENER_EQUITY / SCREENER_OPTION**
+The `keys` for screeners follow the format: `(PREFIX)_(SORTFIELD)_(FREQUENCY)`.
+*   *Prefix:* `$DJI`, `$COMPX`, `$SPX`, `INDEX_ALL`, `NYSE`, `NASDAQ`, `OTCBB`, `EQUITY_ALL`, `OPTION_PUT`, `OPTION_CALL`, `OPTION_ALL`.
+*   *Sort:* `VOLUME`, `TRADES`, `PERCENT_CHANGE_UP`, `PERCENT_CHANGE_DOWN`.
+*   *Frequency:* `0`, `1`, `5`, `10`, `30`, `60`.
+
+**Response Fields:**
+| Key | Field | Key | Field |
+| :--- | :--- | :--- | :--- |
+| 0 | Symbol | 1 | Timestamp |
+| 2 | Sort Field | 3 | Frequency |
+| 4 | Items (Array) | | |
+
+**Item Fields (within key 4):**
+`symbol`, `description`, `lastPrice`, `netChange`, `netPercentChange`, `volume`, `totalVolume`, `marketShare`, `trades`.
+
+#### **ACCT_ACTIVITY**
+| Key | Field | Description |
+| :--- | :--- | :--- |
+| `seq` | Sequence | Message number for tracking. |
+| `key` | Key | Subscription identifier. |
+| 1 | Account | The Account Hash where activity occurred. |
+| 2 | Message Type | Type of activity (e.g., Execution). |
+| 3 | Message Data | The core JSON data for the activity update. |
+
+### **6. Response Codes**
+
+| Code | Name | Description |
+| :--- | :--- | :--- |
+| 0 | `SUCCESS` | Request successful. |
+| 3 | `LOGIN_DENIED` | Token invalid or expired. |
+| 12 | `CLOSE_CONNECTION` | Max connections reached (Limit: 1). |
+| 19 | `SYMBOL_LIMIT` | Reached max subscription limit. |
+| 20 | `CONN_NOT_FOUND` | CustomerId or CorrelId mismatch. |
+| 30 | `STOP_STREAMING` | Terminated due to slowness or inactivity. |
 
 
 ## Common HTTP Error Responses
 
-The following error responses are common across most API endpoints. They typically return a standard `ServiceError` JSON schema (`{ "message": "string", "errors": [ "string" ] }`) with the `Schwab-Client-CorrelID` header.
+Most API endpoints return a standardized error response when a request fails. The error body typically contains an `errors` array with detailed information.
 
-* **400**: An error message indicating the validation problem with the request.
-* **401**: An error message indicating either authorization token is invalid or there are no accounts the caller is allowed to view or use for trading that are registered with the provided third party application
-* **403**: An error message indicating the caller is forbidden from accessing this service
-* **404**: An error message indicating the resource is not found
-* **500**: An error message indicating there was an unexpected server error
-* **503**: An error message indicating server has a temporary problem responding
+### **Error Schema**
+```json
+{
+    "errors": [
+        {
+            "id": "6808262e-52bb-4421-9d31-6c0e762e7dd5",
+            "status": "400",
+            "title": "Bad Request",
+            "detail": "Missing header",
+            "source": {
+                "header": "Authorization"
+            }
+        }
+    ]
+}
+```
+
+### **Common Error Codes**
+* **400 (Bad Request)**: The request was invalid (e.g., missing parameters, invalid values).
+* **401 (Unauthorized)**: Authorization token is invalid or missing.
+* **403 (Forbidden)**: Access is denied for the requested resource.
+* **404 (Not Found)**: The requested resource does not exist.
+* **429 (Too Many Requests)**: Rate limit exceeded.
+* **500 (Internal Server Error)**: An unexpected error occurred on the server.
+* **503 (Service Unavailable)**: The server is temporarily unable to handle the request.
+
+### **Response Headers**
+* `Schwab-Client-CorrelId`: A unique ID for tracking the individual service call.
+* `Schwab-Resource-Version`: The version of the API resource.
 
 # Schemas
 
