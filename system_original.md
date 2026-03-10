@@ -108,14 +108,14 @@ You have access to the following specialized skills. To activate a skill and rec
     <location>/home/vsukhoml/.gemini/skills/xai-sdk/SKILL.md</location>
   </skill>
   <skill>
-    <name>python-coding</name>
-    <description>Python coding rules/guidelines. Always use this `python-coding` skill when creating, updating code in Python.</description>
-    <location>/home/vsukhoml/.gemini/skills/python-coding/SKILL.md</location>
-  </skill>
-  <skill>
     <name>schwab-api</name>
     <description>Use this skill when building applications using Charles Schwab Trading API.</description>
     <location>/home/vsukhoml/.gemini/skills/schwab-api/SKILL.md</location>
+  </skill>
+  <skill>
+    <name>python-coding</name>
+    <description>Python coding rules/guidelines. Always use this `python-coding` skill when creating, updating code in Python.</description>
+    <location>/home/vsukhoml/.gemini/skills/python-coding/SKILL.md</location>
   </skill>
   <skill>
     <name>gemini-api-dev</name>
