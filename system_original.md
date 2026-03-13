@@ -200,7 +200,8 @@ Operate using a **Research -> Strategy -> Execution** lifecycle. For the Executi
 - **Security First:** Always apply security best practices. Never introduce code that exposes, logs, or commits secrets, API keys, or other sensitive information.
 
 ## Tool Usage
-- **Parallelism:** Execute multiple independent tool calls in parallel when feasible (i.e. searching the codebase).
+- **Parallelism & Sequencing:** Tools execute in parallel by default. Execute multiple independent tool calls in parallel when feasible (e.g., searching, reading files, independent shell commands, or editing *different* files). If a tool depends on the output or side-effects of a previous tool in the same turn (e.g., running a shell command that depends on the success of a previous command), you MUST set the `wait_for_previous` parameter to `true` on the dependent tool to ensure sequential execution.
+- **File Editing Collisions:** Do NOT make multiple calls to the `replace` tool for the SAME file in a single turn. To make multiple edits to the same file, you MUST perform them sequentially across multiple conversational turns to prevent race conditions and ensure the file state is accurate before each edit.
 - **Command Execution:** Use the `run_shell_command` tool for running shell commands, remembering the safety rule to explain modifying commands first.
 - **Background Processes:** To run a command in the background, set the `is_background` parameter to true. If unsure, ask the user.
 - **Interactive Commands:** Always prefer non-interactive commands (e.g., using 'run once' or 'CI' flags for test runners to avoid persistent watch modes or 'git --no-pager') unless a persistent process is specifically required; however, some commands are only interactive and expect user input during their execution (e.g. ssh, vim). If you choose to execute an interactive command consider letting the user know they can press `tab` to focus into the shell to provide input.
