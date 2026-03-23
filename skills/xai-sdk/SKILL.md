@@ -1,7 +1,6 @@
 ---
 name: xai-sdk
-description:
-  Use this to develop Python code using X.ai SDK (Grok LLM). It provides details on the proper use of modern X.ai API.
+description: Use this to develop Python code using X.ai SDK (Grok LLM). It provides details on the proper use of modern X.ai API.
 ---
 
 # xAI API Integration Guide (Grok-4)

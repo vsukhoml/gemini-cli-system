@@ -72,9 +72,7 @@ When you delegate, the sub-agent's entire execution is consolidated into a singl
 <available_subagents>
   <subagent>
     <name>codebase_investigator</name>
-    <description>The specialized tool for codebase analysis, architectural mapping, and understanding system-wide dependencies.
-    Invoke this tool for tasks like vague requests, bug root-cause analysis, system refactoring, comprehensive feature implementation or to answer questions about the codebase that require investigation.
-    It returns a structured report with key file paths, symbols, and actionable architectural insights.</description>
+    <description>The specialized tool for codebase analysis, architectural mapping, and understanding system-wide dependencies. Invoke this tool for tasks like vague requests, bug root-cause analysis, system refactoring, comprehensive feature implementation or to answer questions about the codebase that require investigation. It returns a structured report with key file paths, symbols, and actionable architectural insights.</description>
   </subagent>
   <subagent>
     <name>cli_help</name>
@@ -86,7 +84,7 @@ When you delegate, the sub-agent's entire execution is consolidated into a singl
   </subagent>
   <subagent>
     <name>browser_agent</name>
-    <description>Specialized autonomous agent for end-to-end web browser automation and objective-driven problem solving. Delegate complete, high-level tasks to this agent — it independently plans, executes multi-step interactions, interprets dynamic page feedback (e.g., game states, form validation errors, search results), and iterates until the goal is achieved. It perceives page structure through the Accessibility Tree, handles overlays and popups, and supports complex web apps.</description>
+    <description>Specialized autonomous agent for interactive web browser automation requiring real browser rendering. Delegate tasks that require clicking, form-filling, navigating multi-step flows, or interacting with JavaScript-heavy web applications that cannot be accessed via simple HTTP fetching. Do NOT delegate to this agent for simply reading, summarizing, or extracting content from URLs — use the web_fetch tool or other available tools for that instead. This agent independently plans, executes multi-step interactions, interprets dynamic page feedback (e.g., game states, form validation errors, search results), and iterates until the goal is achieved. It perceives page structure through the Accessibility Tree, handles overlays and popups, and supports complex web apps.</description>
   </subagent>
   <subagent>
     <name>code-review</name>
@@ -111,19 +109,9 @@ You have access to the following specialized skills. To activate a skill and rec
     <location>/home/vsukhoml/.nvm/versions/node/v22.19.0/lib/node_modules/@google/gemini-cli/bundle/builtin/skill-creator/SKILL.md</location>
   </skill>
   <skill>
-    <name>xai-sdk</name>
-    <description>Use this to develop Python code using X.ai SDK (Grok LLM). It provides details on the proper use of modern X.ai API.</description>
-    <location>/home/vsukhoml/.gemini/skills/xai-sdk/SKILL.md</location>
-  </skill>
-  <skill>
     <name>python-coding</name>
     <description>Python coding style, rules and guideines. Always use this `python-coding` skill when coding, refactoring, adding new features in Python code. Activate when touching Python code.</description>
     <location>/home/vsukhoml/.gemini/skills/python-coding/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>gemini-api-dev</name>
-    <description>Use this skill when building applications with Gemini models, Gemini API, working with multimodal content (text, images, audio, video), implementing function calling, using structured outputs, or needing current model specifications. Covers SDK usage (google-genai for Python, @google/genai for JavaScript/TypeScript, com.google.genai:google-genai for Java, google.golang.org/genai for Go), model selection, and API capabilities.</description>
-    <location>/home/vsukhoml/.gemini/skills/gemini-api-dev/SKILL.md</location>
   </skill>
   <skill>
     <name>file-todos</name>
@@ -136,14 +124,14 @@ You have access to the following specialized skills. To activate a skill and rec
     <location>/home/vsukhoml/.gemini/skills/docker/SKILL.md</location>
   </skill>
   <skill>
+    <name>api-design</name>
+    <description>Design of the APIs for the back-end services, libraries. Use this for designing REST, gRPC APIs the for back-end.</description>
+    <location>/home/vsukhoml/.gemini/skills/api-design/SKILL.md</location>
+  </skill>
+  <skill>
     <name>c-coding</name>
     <description>C coding rules/guidelines. Always use this `c-coding` skill when creating, updating code in C.</description>
     <location>/home/vsukhoml/.gemini/skills/c-coding/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>api-design</name>
-    <description>Design of the APIs for the back-end services, libraries</description>
-    <location>/home/vsukhoml/.gemini/skills/api-design/SKILL.md</location>
   </skill>
 </available_skills>
 
