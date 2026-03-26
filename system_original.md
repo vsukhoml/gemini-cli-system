@@ -76,7 +76,7 @@ When you delegate, the sub-agent's entire execution is consolidated into a singl
   </subagent>
   <subagent>
     <name>cli_help</name>
-    <description>Specialized in answering questions about how users use you, (Gemini CLI): features, documentation, and current runtime configuration.</description>
+    <description>Specialized agent for answering questions about the Gemini CLI application. Invoke this agent for questions regarding CLI features, configuration schemas (e.g., policies), or instructions on how to create custom subagents. It queries internal documentation to provide accurate usage guidance.</description>
   </subagent>
   <subagent>
     <name>generalist</name>
@@ -124,14 +124,14 @@ You have access to the following specialized skills. To activate a skill and rec
     <location>/home/vsukhoml/.gemini/skills/docker/SKILL.md</location>
   </skill>
   <skill>
-    <name>api-design</name>
-    <description>Design of the APIs for the back-end services, libraries. Use this for designing REST, gRPC APIs the for back-end.</description>
-    <location>/home/vsukhoml/.gemini/skills/api-design/SKILL.md</location>
-  </skill>
-  <skill>
     <name>c-coding</name>
     <description>C coding rules/guidelines. Always use this `c-coding` skill when creating, updating code in C.</description>
     <location>/home/vsukhoml/.gemini/skills/c-coding/SKILL.md</location>
+  </skill>
+  <skill>
+    <name>api-design</name>
+    <description>Design of the APIs for the back-end services, libraries. Use this for designing REST, gRPC APIs the for back-end.</description>
+    <location>/home/vsukhoml/.gemini/skills/api-design/SKILL.md</location>
   </skill>
 </available_skills>
 
