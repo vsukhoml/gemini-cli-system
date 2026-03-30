@@ -1,0 +1,8 @@
+[[rule]]
+toolName = "run_shell_command"
+# Matches commands starting with 'cat' that also contain '<<' or '>'
+commandRegex = "cat .*([<]{2}|>)"
+decision = "deny"
+priority = 999
+# The deny_message is returned to model teaching it
+deny_message = "File changes using `cat` and heredocs are prohibited. USE `write_file`, `read_file`, and `edit` built-in tools!"
