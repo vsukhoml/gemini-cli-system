@@ -1,10 +1,9 @@
 ---
 name: api-design
-description: Design of the APIs for the back-end services, libraries
+description: Design of the APIs for the back-end services, libraries. Use this for designing REST, gRPC APIs the for back-end.
 ---
 
 # API Design Skill
-
 
 ## Before you start
 
@@ -16,20 +15,19 @@ description: Design of the APIs for the back-end services, libraries
 
 - Do a web search for considered solutions to learn their trade-offs, applicability to the use case.
 
-
 ## Planning
 
-- **Domain Knowledge:** Consider regulatory requirements for the domain. Cryptography, FIPS 140-3,  FedRAMP certifications, PCI DSS certifications, GDPR, HIPAA, privacy, requirements for federal, financial and healthcare cloud applications.  Back-end services and Information Security.
+- **Domain Knowledge:** Consider regulatory requirements for the domain. Cryptography, FIPS 140-3, FedRAMP certifications, PCI DSS certifications, GDPR, HIPAA, privacy, requirements for federal, financial and healthcare cloud applications. Back-end services and Information Security.
 
-- **Optimizations:**  Consider user of load balancing, proxies, gateways, caching, sharding, mapping logical services to containers, VMs, physical machines.
+- **Optimizations:** Consider user of load balancing, proxies, gateways, caching, sharding, mapping logical services to containers, VMs, physical machines.
 
 - **Security and Safety:** Ensure that system follows Zero-Trust approach, provides means for authentication and authorization, monitoring, telemetry, auditing (if needed). Consider adding kill-switch to stop operations.
 
-- **Redundancy and failover:** Design systems with ability to introduce redundant components to take over automatically if a primary component fails. 
+- **Redundancy and failover:** Design systems with ability to introduce redundant components to take over automatically if a primary component fails.
 
 - **Circuit breaker pattern:** Monitors a service for failures and, if a certain threshold is met, stops sending requests to that service to allow it to recover.
 
-- **Stateless services:** Prefer designing services that do not retain session information between requests. This allows any instance of a service to handle a request, simplifying horizontal scaling and failover. 
+- **Stateless services:** Prefer designing services that do not retain session information between requests. This allows any instance of a service to handle a request, simplifying horizontal scaling and failover.
 
 - **Backups:** Consider how backups can be implemented.
 
@@ -41,7 +39,6 @@ description: Design of the APIs for the back-end services, libraries
 
 - **MVP** - Avoid lengthy and (possibly) unnecessary work. Iterate on working versions and respond to feedback.
 
-
 ## RESTful Design Principles
 
 - Design a secure, efficient, and convenient API.
@@ -52,15 +49,15 @@ description: Design of the APIs for the back-end services, libraries
 
 - **Minimize Versioning:** Design APIs carefully to avoid the need for versioning. If unavoidable, implement it (e.g., `vX` in URLs) but recognize the significant costs for both users and maintainers.
 
-- **Product Value Over API Elegance** API success hinges almost entirely on the underlying product's value is a crucial business-oriented perspective. 
+- **Product Value Over API Elegance** API success hinges almost entirely on the underlying product's value is a crucial business-oriented perspective.
 
-- **Idempotency:** A clear explanation of idempotency keys for safely retrying action-taking requests (POST, PATCH) is provided. 
+- **Idempotency:** A clear explanation of idempotency keys for safely retrying action-taking requests (POST, PATCH) is provided.
 
 - **Rate Limiting & Safety:** Emphasizing that APIs can be abused at \\"the speed of code\\" and the necessity of rate limits, kill-switches, and providing client metadata (`X-Limit-Remaining`, `Retry-After`) is vital for API stability and preventing incidents. This is a non-negotiable aspect of public API design.
 
 - Validate that the content type is expected for each request or response.
 
-- If using JWT, make sure that you perform robust signature verification on any JWTs that you receive, and account for edge-cases such as JWTs signed using unexpected algorithms.  Enforce a strict whitelist of permitted hosts for the jku header.  Make sure that you're not vulnerable to path traversal or SQL injection via the kid header parameter. Always set an expiration date for any tokens that you issue. Avoid sending tokens in URL parameters where possible. Include the aud (audience) claim (or similar) to specify the intended recipient of the token. This prevents it from being used on different websites. Enable the issuing server to revoke tokens (on logout, for example).
+- If using JWT, make sure that you perform robust signature verification on any JWTs that you receive, and account for edge-cases such as JWTs signed using unexpected algorithms. Enforce a strict whitelist of permitted hosts for the jku header. Make sure that you're not vulnerable to path traversal or SQL injection via the kid header parameter. Always set an expiration date for any tokens that you issue. Avoid sending tokens in URL parameters where possible. Include the aud (audience) claim (or similar) to specify the intended recipient of the token. This prevents it from being used on different websites. Enable the issuing server to revoke tokens (on logout, for example).
 
 - Names and method descriptions matter far more than they ever have before.
 
@@ -68,9 +65,8 @@ description: Design of the APIs for the back-end services, libraries
 
 - If you can't give the user exactly what they asked for, but you can give them a partial answer or related information, do that.
 
-
-
 ### 1. Resource Naming
+
 ```
 ✅ Good:
 GET    /users          # List users
@@ -86,6 +82,7 @@ GET /user/delete/123
 ```
 
 ### 2. HTTP Status Codes
+
 ```typescript
 // Success
 200 OK           - Successful GET/PUT
@@ -105,6 +102,7 @@ GET /user/delete/123
 ```
 
 ### 3. Response Format
+
 ```typescript
 // Success response
 {
@@ -139,6 +137,7 @@ GET /user/delete/123
 ```
 
 ### 4. Pagination
+
 ```typescript
 // Offset-based
 GET /posts?page=2&limit=20
@@ -148,6 +147,7 @@ GET /posts?cursor=abc123&limit=20
 ```
 
 ### 5. Filtering & Sorting
+
 ```typescript
 // Filtering
 GET /posts?status=published&author=123
@@ -157,6 +157,7 @@ GET /posts?sort=-createdAt,title  // - for DESC
 ```
 
 ## API Versioning
+
 ```typescript
 // URL versioning (recommended)
 GET /api/v1/users
@@ -167,6 +168,7 @@ Accept: application/vnd.myapp.v1+json
 ```
 
 ## Rate Limiting
+
 ```typescript
 import rateLimit from 'express-rate-limit';
 
@@ -180,6 +182,7 @@ app.use('/api/', limiter);
 ```
 
 ## Input Validation
+
 ```typescript
 import { z } from 'zod';
 
@@ -201,12 +204,14 @@ function createUser(req, res) {
 ### 6. Status Codes
 
 #### Success Codes
+
 - `200 OK` - Successful GET, PUT, PATCH, DELETE
 - `201 Created` - Successful POST (resource created)
 - `202 Accepted` - Request accepted, processing async
 - `204 No Content` - Successful DELETE (no response body)
 
 #### Client Error Codes
+
 - `400 Bad Request` - Invalid request format
 - `401 Unauthorized` - Missing or invalid authentication
 - `403 Forbidden` - Authenticated but not authorized
@@ -217,6 +222,7 @@ function createUser(req, res) {
 - `429 Too Many Requests` - Rate limit exceeded
 
 #### Server Error Codes
+
 - `500 Internal Server Error` - Server error
 - `502 Bad Gateway` - Invalid response from upstream
 - `503 Service Unavailable` - Temporary unavailable
@@ -250,6 +256,7 @@ function createUser(req, res) {
 ### 8. Authentication & Authorization
 
 #### Authentication Methods
+
 ```
 Bearer Token:
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -262,6 +269,7 @@ Authorization: Basic base64(username:password)
 ```
 
 #### OAuth 2.0 Flow
+
 ```
 1. GET /oauth/authorize
 2. POST /oauth/token
@@ -272,12 +280,14 @@ Authorization: Basic base64(username:password)
 ### 9. Versioning
 
 #### URL Versioning (Recommended)
+
 ```
 /v1/users
 /v2/users
 ```
 
 #### Header Versioning
+
 ```
 Accept: application/vnd.api+json; version=1
 API-Version: 1
@@ -286,6 +296,7 @@ API-Version: 1
 ### 10. Rate Limiting
 
 #### Response Headers
+
 ```
 X-RateLimit-Limit: 1000
 X-RateLimit-Remaining: 999
@@ -294,6 +305,7 @@ Retry-After: 3600
 ```
 
 #### Rate Limit Response
+
 ```json
 HTTP/1.1 429 Too Many Requests
 
@@ -328,6 +340,7 @@ HTTP/1.1 429 Too Many Requests
 ### 12. Caching
 
 #### Cache Headers
+
 ```
 Cache-Control: max-age=3600, public
 ETag: "33a64df551425fcc55e4d42a148795d9f25f89d4"
@@ -335,6 +348,7 @@ Last-Modified: Wed, 15 Jan 2024 10:30:00 GMT
 ```
 
 #### Conditional Requests
+
 ```
 GET /users/123
 If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"
@@ -371,6 +385,7 @@ POST /webhooks
 ### 15. API Documentation Format
 
 Provide for each endpoint:
+
 - HTTP Method & Path
 - Description
 - Authentication required
