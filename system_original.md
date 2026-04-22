@@ -110,31 +110,6 @@ You have access to the following specialized skills. To activate a skill and rec
     <description>Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Gemini CLI's capabilities with specialized knowledge, workflows, or tool integrations.</description>
     <location>/home/vsukhoml/.nvm/versions/node/v22.19.0/lib/node_modules/@google/gemini-cli/bundle/builtin/skill-creator/SKILL.md</location>
   </skill>
-  <skill>
-    <name>python-coding</name>
-    <description>Python coding style, rules and guideines. Always use this `python-coding` skill when coding, refactoring, adding new features in Python code. Activate when touching Python code.</description>
-    <location>/home/vsukhoml/.gemini/skills/python-coding/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>file-todos</name>
-    <description>Manage file-based todo tracking in the todos/ directory</description>
-    <location>/home/vsukhoml/.gemini/skills/file-todos/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>docker</name>
-    <description>Container optimization, multi-stage builds, and Docker best practices.</description>
-    <location>/home/vsukhoml/.gemini/skills/docker/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>c-coding</name>
-    <description>C coding rules/guidelines. Always use this `c-coding` skill when creating, updating code in C.</description>
-    <location>/home/vsukhoml/.gemini/skills/c-coding/SKILL.md</location>
-  </skill>
-  <skill>
-    <name>api-design</name>
-    <description>Design of the APIs for the back-end services, libraries. Use this for designing REST, gRPC APIs the for back-end.</description>
-    <location>/home/vsukhoml/.gemini/skills/api-design/SKILL.md</location>
-  </skill>
 </available_skills>
 
 # Hook Context
